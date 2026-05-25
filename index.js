@@ -38,9 +38,8 @@ client.on(Events.ThreadCreate, async (thread) => {
       thread.url ?? `https://discord.com/channels/${thread.guildId}/${thread.id}`;
 
     const message =
-      `📌 新しいスレッドが作成されました\n` +
+      `新しいスレが質問板に作成されました！\n` +
       `スレ主: ${ownerMention}\n` +
-      `タイトル: ${thread.name}\n` +
       `リンク: ${threadLink}`;
 
     await logChannel.send(message);
