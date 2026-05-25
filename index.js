@@ -1,0 +1,52 @@
+const { Client, GatewayIntentBits, ChannelType, Events } = require('discord.js');
+
+// ===== 設定ここから =====
+const TOKEN = process.env.TOKEN;
+
+if (!TOKEN) {
+  console.error('TOKEN が設定されていません');
+  process.exit(1);
+}
+
+const FORUM_CHANNEL_ID = '1508136701665611786'; // 1つのフォーラムだけ監視するなら入れる
+const LOG_CHANNEL_ID = '1439856188111192125'; // 通知先
+// ===== 設定ここまで =====
+
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds],
+});
+
+client.once(Events.ClientReady, (readyClient) => {
+  console.log(`ログイン完了: ${readyClient.user.tag}`);
+});
+
+client.on(Events.ThreadCreate, async (thread) => {
+  try {
+    // フォーラム投稿だけを対象にする
+    if (!thread.parent || thread.parent.type !== ChannelType.GuildForum) return;
+
+    // 特定のフォーラムだけ監視したい場合
+    if (FORUM_CHANNEL_ID && thread.parentId !== FORUM_CHANNEL_ID) return;
+
+    const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
+    if (!logChannel || !logChannel.isTextBased()) return;
+
+    const ownerMention = thread.ownerId ? `<@${thread.ownerId}>` : '不明';
+
+    // discord.js の url が取れない場合に備えてフォールバックも用意
+    const threadLink =
+      thread.url ?? `https://discord.com/channels/${thread.guildId}/${thread.id}`;
+
+    const message =
+      `📌 新しいスレッドが作成されました\n` +
+      `スレ主: ${ownerMention}\n` +
+      `タイトル: ${thread.name}\n` +
+      `リンク: ${threadLink}`;
+
+    await logChannel.send(message);
+  } catch (error) {
+    console.error('threadCreate でエラー:', error);
+  }
+});
+
+client.login(TOKEN);
