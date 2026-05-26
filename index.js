@@ -8,8 +8,10 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-const FORUM_CHANNEL_ID = '1508136701665611786'; // 1つのフォーラムだけ監視するなら入れる
-const LOG_CHANNEL_ID = '1439856188111192125'; // 通知先
+const forumToLogChannelMap = {
+    '1508136701665611786': '1439856188111192125',
+};
+
 // ===== 設定ここまで =====
 
 const client = new Client({
@@ -22,14 +24,13 @@ client.once(Events.ClientReady, (readyClient) => {
 
 client.on(Events.ThreadCreate, async (thread) => {
   try {
-    // フォーラム投稿だけを対象にする
-    if (!thread.parent || thread.parent.type !== ChannelType.GuildForum) return;
+      if (!thread.parent || thread.parent.type !== ChannelType.GuildForum) return;
 
-    // 特定のフォーラムだけ監視したい場合
-    if (FORUM_CHANNEL_ID && thread.parentId !== FORUM_CHANNEL_ID) return;
+      const logChannelId = forumToLogChannelMap[thread.parentId];
+      if (!logChannelId) return;
 
-    const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
-    if (!logChannel || !logChannel.isTextBased()) return;
+      const logChannel = await client.channels.fetch(logChannelId);
+      if (!logChannel || !logChannel.isTextBased()) return;
 
     const ownerMention = thread.ownerId ? `<@${thread.ownerId}>` : '不明';
 
