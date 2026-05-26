@@ -201,6 +201,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
+    console.log(`[health] ${new Date().toISOString()} /health accessed`);
     res.status(200).send('ok');
 });
 
