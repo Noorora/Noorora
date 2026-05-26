@@ -83,7 +83,6 @@ async function main() {
                         `設定しました。\n` +
                         `フォーラム: <#${forum.id}>\n` +
                         `通知先: <#${log.id}>`,
-                    ephemeral: true,
                 });
                 return;
             }
@@ -95,7 +94,6 @@ async function main() {
                 if (!settings || Object.keys(settings).length === 0) {
                     await interaction.reply({
                         content: 'このサーバーにはまだ設定がありません。',
-                        ephemeral: true,
                     });
                     return;
                 }
@@ -107,7 +105,6 @@ async function main() {
 
                 await interaction.reply({
                     content: `現在の設定一覧:\n${lines.join('\n')}`,
-                    ephemeral: true,
                 });
                 return;
             }
@@ -136,7 +133,6 @@ async function main() {
 
                 await interaction.reply({
                     content: `設定を削除しました: <#${forum.id}>`,
-                    ephemeral: true,
                 });
                 return;
             }

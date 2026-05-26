@@ -8,30 +8,30 @@ const {
 
 const TOKEN = process.env.TOKEN;
 const APP_ID = process.env.APP_ID;
-// ŠJ”­’†‚Í guild “o˜^‚Ì•û‚ª”½‰f‚ª‘¬‚¢‚Ì‚ÅA•K—v‚È‚çg‚¤
+// é–‹ç™ºä¸­ã¯ guild ç™»éŒ²ã®æ–¹ãŒåæ˜ ãŒé€Ÿã„ã®ã§ã€å¿…è¦ãªã‚‰ä½¿ã†
 const GUILD_ID = process.env.GUILD_ID;
 
 if (!TOKEN || !APP_ID) {
-    console.error('TOKEN ‚Ü‚½‚Í APP_ID ‚ªİ’è‚³‚ê‚Ä‚¢‚Ü‚¹‚ñ');
+    console.error('TOKEN ã¾ãŸã¯ APP_ID ãŒè¨­å®šã•ã‚Œã¦ã„ã¾ã›ã‚“');
     process.exit(1);
 }
 
 const commands = [
     new SlashCommandBuilder()
         .setName('setup')
-        .setDescription('ƒtƒH[ƒ‰ƒ€‚Æ’Ê’mæƒ`ƒƒƒ“ƒlƒ‹‚Ì‘Î‰‚ğ“o˜^‚µ‚Ü‚·')
+        .setDescription('ãƒ•ã‚©ãƒ¼ãƒ©ãƒ ã¨é€šçŸ¥å…ˆãƒãƒ£ãƒ³ãƒãƒ«ã®å¯¾å¿œã‚’ç™»éŒ²ã—ã¾ã™')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .addChannelOption((option) =>
             option
                 .setName('forum')
-                .setDescription('ŠÄ‹‚µ‚½‚¢ƒtƒH[ƒ‰ƒ€')
+                .setDescription('ç›£è¦–ã—ãŸã„ãƒ•ã‚©ãƒ¼ãƒ©ãƒ ')
                 .addChannelTypes(ChannelType.GuildForum)
                 .setRequired(true),
         )
         .addChannelOption((option) =>
             option
                 .setName('log')
-                .setDescription('’Ê’m‚ğ‘—‚éƒeƒLƒXƒgƒ`ƒƒƒ“ƒlƒ‹')
+                .setDescription('é€šçŸ¥ã‚’é€ã‚‹ãƒ†ã‚­ã‚¹ãƒˆãƒãƒ£ãƒ³ãƒãƒ«')
                 .addChannelTypes(ChannelType.GuildText)
                 .setRequired(true),
         )
@@ -39,18 +39,18 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName('showsetup')
-        .setDescription('‚±‚ÌƒT[ƒo[‚ÌŒ»İ‚Ìİ’èˆê——‚ğ•\¦‚µ‚Ü‚·')
+        .setDescription('ã“ã®ã‚µãƒ¼ãƒãƒ¼ã®ç¾åœ¨ã®è¨­å®šä¸€è¦§ã‚’è¡¨ç¤ºã—ã¾ã™')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .toJSON(),
 
     new SlashCommandBuilder()
         .setName('unset')
-        .setDescription('ƒtƒH[ƒ‰ƒ€‚Ìİ’è‚ğíœ‚µ‚Ü‚·')
+        .setDescription('ãƒ•ã‚©ãƒ¼ãƒ©ãƒ ã®è¨­å®šã‚’å‰Šé™¤ã—ã¾ã™')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .addChannelOption((option) =>
             option
                 .setName('forum')
-                .setDescription('İ’è‚ğíœ‚µ‚½‚¢ƒtƒH[ƒ‰ƒ€')
+                .setDescription('è¨­å®šã‚’å‰Šé™¤ã—ãŸã„ãƒ•ã‚©ãƒ¼ãƒ©ãƒ ')
                 .addChannelTypes(ChannelType.GuildForum)
                 .setRequired(true),
         )
@@ -62,19 +62,19 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 (async () => {
     try {
         if (GUILD_ID) {
-            console.log('ƒMƒ‹ƒhƒRƒ}ƒ“ƒh‚Æ‚µ‚Ä“o˜^’†...');
+            console.log('ã‚®ãƒ«ãƒ‰ã‚³ãƒãƒ³ãƒ‰ã¨ã—ã¦ç™»éŒ²ä¸­...');
             await rest.put(
                 Routes.applicationGuildCommands(APP_ID, GUILD_ID),
                 { body: commands },
             );
-            console.log('ƒMƒ‹ƒhƒRƒ}ƒ“ƒh“o˜^Š®—¹');
+            console.log('ã‚®ãƒ«ãƒ‰ã‚³ãƒãƒ³ãƒ‰ç™»éŒ²å®Œäº†');
         } else {
-            console.log('ƒOƒ[ƒoƒ‹ƒRƒ}ƒ“ƒh‚Æ‚µ‚Ä“o˜^’†...');
+            console.log('ã‚°ãƒ­ãƒ¼ãƒãƒ«ã‚³ãƒãƒ³ãƒ‰ã¨ã—ã¦ç™»éŒ²ä¸­...');
             await rest.put(
                 Routes.applicationCommands(APP_ID),
                 { body: commands },
             );
-            console.log('ƒOƒ[ƒoƒ‹ƒRƒ}ƒ“ƒh“o˜^Š®—¹');
+            console.log('ã‚°ãƒ­ãƒ¼ãƒãƒ«ã‚³ãƒãƒ³ãƒ‰ç™»éŒ²å®Œäº†');
         }
     } catch (error) {
         console.error(error);
