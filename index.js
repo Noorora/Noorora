@@ -13,9 +13,14 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-const forumToLogChannelMap = {
-    '1508136701665611786': '1439856188111192125',
-};
+let forumToLogChannelMap = {};
+
+try {
+    forumToLogChannelMap = JSON.parse(process.env.FORUM_TO_LOG_CHANNEL_MAP || '{}');
+} catch (error) {
+    console.error('FORUM_TO_LOG_CHANNEL_MAP の JSON が壊れています');
+    process.exit(1);
+}
 
 // ===== 設定ここまで =====
 
