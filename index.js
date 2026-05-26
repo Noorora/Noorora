@@ -26,7 +26,7 @@ if (!REDIS_URL) {
 }
 // ===== 設定ここまで =====
 
-// Render Key Value に接続
+// Render Key Value (Redis / Valkey) に接続
 const kv = createClient({ url: REDIS_URL });
 
 kv.on('error', (error) => {
@@ -49,52 +49,108 @@ async function main() {
         console.log(`ログイン完了: ${readyClient.user.tag}`);
     });
 
-    // /setup を受け取る
+    // /setup, /showsetup, /unset を受け取る
     client.on(Events.InteractionCreate, async (interaction) => {
         if (!interaction.isChatInputCommand()) return;
-        if (interaction.commandName !== 'setup') return;
 
         try {
-            const forum = interaction.options.getChannel('forum', true);
-            const log = interaction.options.getChannel('log', true);
+            // /setup forum:○○ log:#○○
+            if (interaction.commandName === 'setup') {
+                const forum = interaction.options.getChannel('forum', true);
+                const log = interaction.options.getChannel('log', true);
 
-            if (forum.type !== ChannelType.GuildForum) {
+                if (forum.type !== ChannelType.GuildForum) {
+                    await interaction.reply({
+                        content: 'forum にはフォーラムチャンネルを指定してください。',
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                if (log.type !== ChannelType.GuildText) {
+                    await interaction.reply({
+                        content: 'log にはテキストチャンネルを指定してください。',
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                // guild ごとの hash に { forumId: logChannelId } を保存
+                await kv.hSet(guildMapKey(interaction.guildId), forum.id, log.id);
+
                 await interaction.reply({
-                    content: 'forum にはフォーラムチャンネルを指定してください。',
+                    content:
+                        `設定しました。\n` +
+                        `フォーラム: <#${forum.id}>\n` +
+                        `通知先: <#${log.id}>`,
                     ephemeral: true,
                 });
                 return;
             }
 
-            if (log.type !== ChannelType.GuildText) {
+            // /showsetup
+            if (interaction.commandName === 'showsetup') {
+                const settings = await kv.hGetAll(guildMapKey(interaction.guildId));
+
+                if (!settings || Object.keys(settings).length === 0) {
+                    await interaction.reply({
+                        content: 'このサーバーにはまだ設定がありません。',
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                const lines = Object.entries(settings).map(
+                    ([forumId, logId], index) =>
+                        `${index + 1}. フォーラム: <#${forumId}> → 通知先: <#${logId}>`,
+                );
+
                 await interaction.reply({
-                    content: 'log にはテキストチャンネルを指定してください。',
+                    content: `現在の設定一覧:\n${lines.join('\n')}`,
                     ephemeral: true,
                 });
                 return;
             }
 
-            // guildごとの hash に { forumId: logChannelId } を保存
-            await kv.hSet(guildMapKey(interaction.guildId), forum.id, log.id);
+            // /unset forum:○○
+            if (interaction.commandName === 'unset') {
+                const forum = interaction.options.getChannel('forum', true);
 
-            await interaction.reply({
-                content:
-                    `設定しました。\n` +
-                    `フォーラム: <#${forum.id}>\n` +
-                    `通知先: <#${log.id}>`,
-                ephemeral: true,
-            });
+                if (forum.type !== ChannelType.GuildForum) {
+                    await interaction.reply({
+                        content: 'forum にはフォーラムチャンネルを指定してください。',
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                const deleted = await kv.hDel(guildMapKey(interaction.guildId), forum.id);
+
+                if (!deleted) {
+                    await interaction.reply({
+                        content: `そのフォーラムの設定は見つかりませんでした: <#${forum.id}>`,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                await interaction.reply({
+                    content: `設定を削除しました: <#${forum.id}>`,
+                    ephemeral: true,
+                });
+                return;
+            }
         } catch (error) {
-            console.error('/setup でエラー:', error);
+            console.error('interactionCreate でエラー:', error);
 
             if (interaction.replied || interaction.deferred) {
                 await interaction.followUp({
-                    content: '設定中にエラーが発生しました。',
+                    content: 'コマンド実行中にエラーが発生しました。',
                     ephemeral: true,
                 });
             } else {
                 await interaction.reply({
-                    content: '設定中にエラーが発生しました。',
+                    content: 'コマンド実行中にエラーが発生しました。',
                     ephemeral: true,
                 });
             }
