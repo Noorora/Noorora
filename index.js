@@ -188,3 +188,22 @@ main().catch((error) => {
     console.error('起動時エラー:', error);
     process.exit(1);
 });
+
+
+//時間経過でタイムアウトされる対策
+const express = require('express');
+
+const app = express();
+const PORT = Number(process.env.PORT || 10000);
+
+app.get('/', (req, res) => {
+    res.send('Bot is running');
+});
+
+app.get('/health', (req, res) => {
+    res.status(200).send('ok');
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`HTTP server listening on ${PORT}`);
+});
