@@ -38,8 +38,10 @@ client.on(Events.ThreadCreate, async (thread) => {
     const threadLink =
       thread.url ?? `https://discord.com/channels/${thread.guildId}/${thread.id}`;
 
+    const forumMention = `<#${thread.parentId}>`;
+
     const message =
-      `新しいスレが質問板に作成されました！\n` +
+      `${forumMention} に、新しいスレッドが作成されました！\n` +
       `スレ主: ${ownerMention}\n` +
       `リンク: ${threadLink}`;
 
