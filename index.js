@@ -1,5 +1,10 @@
 const { Client, GatewayIntentBits, ChannelType, Events } = require('discord.js');
 
+if (process.env.RUN_ON_RENDER !== 'true') {
+    console.log('ローカル実行は禁止されています。終了します。');
+    process.exit(0);
+}
+
 // ===== 設定ここから =====
 const TOKEN = process.env.TOKEN;
 
