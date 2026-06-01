@@ -19,25 +19,46 @@ const commands = [
         .setName('setup')
         .setDescription('フォーラムと通知先の対応を登録します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-        .addChannelOption((option) =>
-            option
-                .setName('forum')
-                .setDescription('監視したいフォーラム')
-                .addChannelTypes(ChannelType.GuildForum)
-                .setRequired(true),
+
+        // /setup channel
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('channel')
+                .setDescription('通知先をテキストチャンネルに設定します')
+                .addChannelOption((option) =>
+                    option
+                        .setName('forum')
+                        .setDescription('監視したいフォーラム')
+                        .addChannelTypes(ChannelType.GuildForum)
+                        .setRequired(true),
+                )
+                .addChannelOption((option) =>
+                    option
+                        .setName('log_channel')
+                        .setDescription('通知先のテキストチャンネル')
+                        .addChannelTypes(ChannelType.GuildText)
+                        .setRequired(true),
+                ),
         )
-        .addChannelOption((option) =>
-            option
-                .setName('log_channel')
-                .setDescription('通知先のテキストチャンネル')
-                .addChannelTypes(ChannelType.GuildText)
-                .setRequired(false),
-        )
-        .addStringOption((option) =>
-            option
-                .setName('thread_id')
-                .setDescription('通知先の既存スレッドID')
-                .setRequired(false),
+
+        // /setup thread
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('thread')
+                .setDescription('通知先を既存スレッドに設定します')
+                .addChannelOption((option) =>
+                    option
+                        .setName('forum')
+                        .setDescription('監視したいフォーラム')
+                        .addChannelTypes(ChannelType.GuildForum)
+                        .setRequired(true),
+                )
+                .addStringOption((option) =>
+                    option
+                        .setName('thread_id')
+                        .setDescription('通知先の既存スレッドID')
+                        .setRequired(true),
+                ),
         )
         .toJSON(),
 

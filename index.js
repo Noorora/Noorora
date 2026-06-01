@@ -26,12 +26,14 @@ if (!REDIS_URL) {
 }
 // ===== 設定ここまで =====
 
+// Render Key Value (Redis / Valkey) に接続
 const kv = createClient({ url: REDIS_URL });
 
 kv.on('error', (error) => {
     console.error('Key Value 接続エラー:', error);
 });
 
+// guild ごとに設定を分けるためのキー
 function guildMapKey(guildId) {
     return `forum-log-map:${guildId}`;
 }
@@ -47,45 +49,58 @@ async function main() {
         console.log(`ログイン完了: ${readyClient.user.tag}`);
     });
 
+    // /setup, /showsetup, /unset を受け取る
     client.on(Events.InteractionCreate, async (interaction) => {
         if (!interaction.isChatInputCommand()) return;
 
         try {
+            // /setup channel ... または /setup thread ...
             if (interaction.commandName === 'setup') {
-                const forum = interaction.options.getChannel('forum', true);
-                const logChannel = interaction.options.getChannel('log_channel', false);
-                const threadId = interaction.options.getString('thread_id', false);
+                const sub = interaction.options.getSubcommand();
 
-                if (forum.type !== ChannelType.GuildForum) {
-                    await interaction.reply({
-                        content: 'forum にはフォーラムチャンネルを指定してください。',
-                    });
-                    return;
-                }
+                // /setup channel
+                if (sub === 'channel') {
+                    const forum = interaction.options.getChannel('forum', true);
+                    const logChannel = interaction.options.getChannel('log_channel', true);
 
-                // どちらか片方だけ必須
-                if ((!logChannel && !threadId) || (logChannel && threadId)) {
-                    await interaction.reply({
-                        content: 'log_channel か thread_id のどちらか片方だけを指定してください。',
-                    });
-                    return;
-                }
+                    if (forum.type !== ChannelType.GuildForum) {
+                        await interaction.reply({
+                            content: 'forum にはフォーラムチャンネルを指定してください。',
+                        });
+                        return;
+                    }
 
-                let targetId;
-
-                // テキストチャンネル指定
-                if (logChannel) {
                     if (logChannel.type !== ChannelType.GuildText) {
                         await interaction.reply({
                             content: 'log_channel にはテキストチャンネルを指定してください。',
                         });
                         return;
                     }
-                    targetId = logChannel.id;
+
+                    // guild ごとの hash に { forumId: targetId } を保存
+                    await kv.hSet(guildMapKey(interaction.guildId), forum.id, logChannel.id);
+
+                    await interaction.reply({
+                        content:
+                            `設定しました。\n` +
+                            `フォーラム: <#${forum.id}>\n` +
+                            `通知先チャンネル: <#${logChannel.id}>`,
+                    });
+                    return;
                 }
 
-                // 既存スレッドID指定
-                if (threadId) {
+                // /setup thread
+                if (sub === 'thread') {
+                    const forum = interaction.options.getChannel('forum', true);
+                    const threadId = interaction.options.getString('thread_id', true);
+
+                    if (forum.type !== ChannelType.GuildForum) {
+                        await interaction.reply({
+                            content: 'forum にはフォーラムチャンネルを指定してください。',
+                        });
+                        return;
+                    }
+
                     const targetThread = await client.channels.fetch(threadId).catch(() => null);
 
                     if (!targetThread) {
@@ -102,20 +117,20 @@ async function main() {
                         return;
                     }
 
-                    targetId = targetThread.id;
+                    // guild ごとの hash に { forumId: targetThreadId } を保存
+                    await kv.hSet(guildMapKey(interaction.guildId), forum.id, targetThread.id);
+
+                    await interaction.reply({
+                        content:
+                            `設定しました。\n` +
+                            `フォーラム: <#${forum.id}>\n` +
+                            `通知先スレッド: <#${targetThread.id}>`,
+                    });
+                    return;
                 }
-
-                await kv.hSet(guildMapKey(interaction.guildId), forum.id, targetId);
-
-                await interaction.reply({
-                    content:
-                        `設定しました。\n` +
-                        `フォーラム: <#${forum.id}>\n` +
-                        `通知先: <#${targetId}>`,
-                });
-                return;
             }
 
+            // /showsetup
             if (interaction.commandName === 'showsetup') {
                 const settings = await kv.hGetAll(guildMapKey(interaction.guildId));
 
@@ -137,6 +152,7 @@ async function main() {
                 return;
             }
 
+            // /unset forum:○○
             if (interaction.commandName === 'unset') {
                 const forum = interaction.options.getChannel('forum', true);
 
@@ -176,10 +192,12 @@ async function main() {
         }
     });
 
+    // フォーラムに新しいスレッドが立ったら通知
     client.on(Events.ThreadCreate, async (thread) => {
         try {
             if (!thread.parent || thread.parent.type !== ChannelType.GuildForum) return;
 
+            // 保存済み設定から、この forum に対応する通知先を探す
             const targetId = await kv.hGet(guildMapKey(thread.guildId), thread.parentId);
             if (!targetId) return;
 
@@ -196,6 +214,7 @@ async function main() {
                 `スレ主: ${ownerMention}\n` +
                 `リンク: ${threadLink}`;
 
+            // テキストチャンネルでもスレッドでも send() できる
             if (typeof target.send === 'function') {
                 await target.send(message);
             }
