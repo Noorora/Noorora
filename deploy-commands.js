@@ -28,15 +28,16 @@ const commands = [
         )
         .addChannelOption((option) =>
             option
-                .setName('log')
-                .setDescription('通知先のチャンネルまたはスレッド')
-                .addChannelTypes(
-                    ChannelType.GuildText,
-                    ChannelType.PublicThread,
-                    ChannelType.PrivateThread,
-                    ChannelType.AnnouncementThread,
-                )
-                .setRequired(true),
+                .setName('log_channel')
+                .setDescription('通知先のテキストチャンネル')
+                .addChannelTypes(ChannelType.GuildText)
+                .setRequired(false),
+        )
+        .addStringOption((option) =>
+            option
+                .setName('thread_id')
+                .setDescription('通知先の既存スレッドID')
+                .setRequired(false),
         )
         .toJSON(),
 
