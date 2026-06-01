@@ -17,7 +17,7 @@ if (!TOKEN || !APP_ID) {
 const commands = [
     new SlashCommandBuilder()
         .setName('setup')
-        .setDescription('フォーラムと通知先チャンネルの対応を登録します')
+        .setDescription('フォーラムと通知先の対応を登録します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .addChannelOption((option) =>
             option
@@ -29,8 +29,13 @@ const commands = [
         .addChannelOption((option) =>
             option
                 .setName('log')
-                .setDescription('通知を送るテキストチャンネル')
-                .addChannelTypes(ChannelType.GuildText)
+                .setDescription('通知先のチャンネルまたはスレッド')
+                .addChannelTypes(
+                    ChannelType.GuildText,
+                    ChannelType.PublicThread,
+                    ChannelType.PrivateThread,
+                    ChannelType.AnnouncementThread,
+                )
                 .setRequired(true),
         )
         .toJSON(),
@@ -70,4 +75,3 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
         process.exit(1);
     }
 })();
-``
