@@ -108,6 +108,39 @@ async function sendToTarget(client, targetId, message) {
     }
 }
 
+// ===== 指定チャンネルで一度でも発言したユーザーIDを集める =====
+async function collectSpeakerIdsFromChannel(channel) {
+    const speakerIds = new Set();
+    let before;
+    let fetchedCount = 0;
+
+    while (true) {
+        const options = { limit: 100 };
+        if (before) options.before = before;
+
+        const batch = await channel.messages.fetch(options);
+        if (batch.size === 0) break;
+
+        for (const message of batch.values()) {
+            if (!message.author.bot) {
+                speakerIds.add(message.author.id);
+            }
+        }
+
+        fetchedCount += batch.size;
+
+        const lastMessage = batch.last();
+        if (!lastMessage) break;
+
+        before = lastMessage.id;
+
+        // 最後のページ
+        if (batch.size < 100) break;
+    }
+
+    return { speakerIds, fetchedCount };
+}
+
 async function main() {
     await kv.connect();
 
@@ -393,19 +426,87 @@ async function main() {
                     return;
                 }
             }
+
+            // =========================================================
+            // /activity 系
+            // =========================================================
+            if (interaction.commandName === 'activity') {
+                const sub = interaction.options.getSubcommand();
+
+                // /activity channelnever
+                if (sub === 'channelnever') {
+                    const channel = interaction.options.getChannel('channel', true);
+
+                    if (channel.type !== ChannelType.GuildText) {
+                        await interaction.reply({
+                            content: 'channel には通常のテキストチャンネルを指定してください。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    // 履歴取得は時間がかかることがあるので先に defer
+                    await interaction.deferReply({ ephemeral: true });
+
+                    const { speakerIds, fetchedCount } = await collectSpeakerIdsFromChannel(channel);
+
+                    await interaction.guild.members.fetch();
+
+                    const neverSpokenMembers = interaction.guild.members.cache.filter(
+                        (member) =>
+                            !member.user.bot &&
+                            !speakerIds.has(member.id)
+                    );
+
+                    if (neverSpokenMembers.size === 0) {
+                        await interaction.editReply({
+                            content:
+                                `チャンネル <#${channel.id}> の取得できた履歴（${fetchedCount}件）では、` +
+                                `一度も発言していないメンバーはいません。`,
+                        });
+                        return;
+                    }
+
+                    const lines = neverSpokenMembers.map(
+                        (member) => `・${member.user.tag} (<@${member.id}>)`
+                    );
+
+                    const chunks = splitLinesToMessages(
+                        `チャンネル <#${channel.id}> の取得できた履歴（${fetchedCount}件）で、一度も発言していないメンバー一覧:\n`,
+                        lines
+                    );
+
+                    await interaction.editReply({
+                        content: chunks[0],
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+
+                    return;
+                }
+            }
         } catch (error) {
             console.error('interactionCreate でエラー:', error);
 
-            if (interaction.replied || interaction.deferred) {
+            if (interaction.deferred) {
+                await interaction.editReply({
+                    content: 'コマンド実行中にエラーが発生しました。',
+                }).catch(() => null);
+            } else if (interaction.replied) {
                 await interaction.followUp({
                     content: 'コマンド実行中にエラーが発生しました。',
                     ephemeral: true,
-                });
+                }).catch(() => null);
             } else {
                 await interaction.reply({
                     content: 'コマンド実行中にエラーが発生しました。',
                     ephemeral: true,
-                });
+                }).catch(() => null);
             }
         }
     });
@@ -466,3 +567,4 @@ app.get('/health', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`HTTP server listening on ${PORT}`);
 });
+``

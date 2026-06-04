@@ -23,7 +23,6 @@ const commands = [
         .setDescription('フォーラム通知設定を管理します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 
-        // /forum channel
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('channel')
@@ -44,7 +43,6 @@ const commands = [
                 ),
         )
 
-        // /forum thread
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('thread')
@@ -64,14 +62,12 @@ const commands = [
                 ),
         )
 
-        // /forum show
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('show')
                 .setDescription('現在のフォーラム通知設定一覧を表示します'),
         )
 
-        // /forum unset
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('unset')
@@ -94,7 +90,6 @@ const commands = [
         .setDescription('ロール条件でメンバー一覧を表示します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 
-        // /role missing
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('missing')
@@ -107,7 +102,6 @@ const commands = [
                 ),
         )
 
-        // /role mentionmissing
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('mentionmissing')
@@ -120,7 +114,6 @@ const commands = [
                 ),
         )
 
-        // /role filter
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('filter')
@@ -138,7 +131,29 @@ const commands = [
                         .setRequired(true),
                 ),
         )
-        .toJSON()
+        .toJSON(),
+
+    // =========================================================
+    // /activity
+    // =========================================================
+    new SlashCommandBuilder()
+        .setName('activity')
+        .setDescription('チャンネル発言状況を確認します')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('channelnever')
+                .setDescription('指定チャンネルで一度も発言していないメンバー一覧を表示します')
+                .addChannelOption((option) =>
+                    option
+                        .setName('channel')
+                        .setDescription('確認したい通常テキストチャンネル')
+                        .addChannelTypes(ChannelType.GuildText)
+                        .setRequired(true),
+                ),
+        )
+        .toJSON(),
 ];
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
