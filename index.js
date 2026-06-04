@@ -33,32 +33,90 @@ kv.on('error', (error) => {
     console.error('Key Value 接続エラー:', error);
 });
 
-// guild ごとに設定を分けるためのキー
+// ===== Redis キー =====
 function guildMapKey(guildId) {
     return `forum-log-map:${guildId}`;
+}
+
+function missingRoleKey(guildId) {
+    return `missing-role:${guildId}`;
+}
+
+// ===== 長文分割用 =====
+function splitLinesToMessages(header, lines, maxLength = 1900) {
+    const chunks = [];
+    let current = header;
+
+    for (const line of lines) {
+        if ((current + line + '\n').length > maxLength) {
+            chunks.push(current);
+            current = '';
+        }
+        current += line + '\n';
+    }
+
+    if (current) chunks.push(current);
+    return chunks;
+}
+
+// ===== 転送先へ送信 =====
+async function sendToTarget(client, targetId, message) {
+    const target = await client.channels.fetch(targetId).catch(() => null);
+    if (!target) return { ok: false, reason: 'target_not_found' };
+
+    if (typeof target.send !== 'function') {
+        return { ok: false, reason: 'target_not_sendable' };
+    }
+
+    // 既存スレッドがアーカイブされていたら、可能なら起こす
+    if (typeof target.isThread === 'function' && target.isThread()) {
+        if (target.archived && !target.locked) {
+            try {
+                await target.setArchived(false);
+            } catch (e) {
+                console.warn('スレッドのアーカイブ解除に失敗:', e);
+            }
+        }
+    }
+
+    try {
+        await target.send(message);
+        return { ok: true };
+    } catch (error) {
+        console.error('送信失敗:', error);
+        return { ok: false, reason: 'send_failed' };
+    }
 }
 
 async function main() {
     await kv.connect();
 
     const client = new Client({
-        intents: [GatewayIntentBits.Guilds],
+        intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
     });
 
     client.once(Events.ClientReady, (readyClient) => {
         console.log(`ログイン完了: ${readyClient.user.tag}`);
     });
 
-    // /setup, /showsetup, /unset を受け取る
     client.on(Events.InteractionCreate, async (interaction) => {
         if (!interaction.isChatInputCommand()) return;
 
+        if (!interaction.inGuild()) {
+            await interaction.reply({
+                content: 'このコマンドはサーバー内でのみ使用できます。',
+            });
+            return;
+        }
+
         try {
-            // /setup channel ... または /setup thread ...
-            if (interaction.commandName === 'setup') {
+            // =========================================================
+            // /forum 系
+            // =========================================================
+            if (interaction.commandName === 'forum') {
                 const sub = interaction.options.getSubcommand();
 
-                // /setup channel
+                // /forum channel
                 if (sub === 'channel') {
                     const forum = interaction.options.getChannel('forum', true);
                     const logChannel = interaction.options.getChannel('log_channel', true);
@@ -77,19 +135,18 @@ async function main() {
                         return;
                     }
 
-                    // guild ごとの hash に { forumId: targetId } を保存
                     await kv.hSet(guildMapKey(interaction.guildId), forum.id, logChannel.id);
 
                     await interaction.reply({
                         content:
-                            `設定しました。\n` +
+                            `フォーラム通知設定を登録しました。\n` +
                             `フォーラム: <#${forum.id}>\n` +
                             `通知先チャンネル: <#${logChannel.id}>`,
                     });
                     return;
                 }
 
-                // /setup thread
+                // /forum thread
                 if (sub === 'thread') {
                     const forum = interaction.options.getChannel('forum', true);
                     const threadId = interaction.options.getString('thread_id', true);
@@ -117,65 +174,171 @@ async function main() {
                         return;
                     }
 
-                    // guild ごとの hash に { forumId: targetThreadId } を保存
                     await kv.hSet(guildMapKey(interaction.guildId), forum.id, targetThread.id);
 
                     await interaction.reply({
                         content:
-                            `設定しました。\n` +
+                            `フォーラム通知設定を登録しました。\n` +
                             `フォーラム: <#${forum.id}>\n` +
                             `通知先スレッド: <#${targetThread.id}>`,
                     });
                     return;
                 }
+
+                // /forum show
+                if (sub === 'show') {
+                    const settings = await kv.hGetAll(guildMapKey(interaction.guildId));
+
+                    if (!settings || Object.keys(settings).length === 0) {
+                        await interaction.reply({
+                            content: 'このサーバーにはまだフォーラム通知設定がありません。',
+                        });
+                        return;
+                    }
+
+                    const lines = Object.entries(settings).map(
+                        ([forumId, targetId], index) =>
+                            `${index + 1}. フォーラム: <#${forumId}> → 通知先: <#${targetId}>`,
+                    );
+
+                    const chunks = splitLinesToMessages('現在のフォーラム通知設定一覧:\n', lines);
+
+                    await interaction.reply({ content: chunks[0] });
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({ content: chunks[i] });
+                    }
+                    return;
+                }
+
+                // /forum unset
+                if (sub === 'unset') {
+                    const forum = interaction.options.getChannel('forum', true);
+
+                    if (forum.type !== ChannelType.GuildForum) {
+                        await interaction.reply({
+                            content: 'forum にはフォーラムチャンネルを指定してください。',
+                        });
+                        return;
+                    }
+
+                    const deleted = await kv.hDel(guildMapKey(interaction.guildId), forum.id);
+
+                    if (!deleted) {
+                        await interaction.reply({
+                            content: `そのフォーラムの設定は見つかりませんでした: <#${forum.id}>`,
+                        });
+                        return;
+                    }
+
+                    await interaction.reply({
+                        content: `フォーラム通知設定を削除しました: <#${forum.id}>`,
+                    });
+                    return;
+                }
             }
 
-            // /showsetup
-            if (interaction.commandName === 'showsetup') {
-                const settings = await kv.hGetAll(guildMapKey(interaction.guildId));
+            // =========================================================
+            // /role 系
+            // =========================================================
+            if (interaction.commandName === 'role') {
+                const sub = interaction.options.getSubcommand();
 
-                if (!settings || Object.keys(settings).length === 0) {
+                // /role set
+                if (sub === 'set') {
+                    const role = interaction.options.getRole('target', true);
+
+                    await kv.set(missingRoleKey(interaction.guildId), role.id);
+
                     await interaction.reply({
-                        content: 'このサーバーにはまだ設定がありません。',
+                        content: `未所持チェック対象ロールを設定しました: <@&${role.id}>`,
                     });
                     return;
                 }
 
-                const lines = Object.entries(settings).map(
-                    ([forumId, targetId], index) =>
-                        `${index + 1}. フォーラム: <#${forumId}> → 通知先: <#${targetId}>`,
-                );
+                // /role show
+                if (sub === 'show') {
+                    const roleId = await kv.get(missingRoleKey(interaction.guildId));
 
-                await interaction.reply({
-                    content: `現在の設定一覧:\n${lines.join('\n')}`,
-                });
-                return;
-            }
+                    if (!roleId) {
+                        await interaction.reply({
+                            content: '未所持チェック対象ロールはまだ設定されていません。',
+                        });
+                        return;
+                    }
 
-            // /unset forum:○○
-            if (interaction.commandName === 'unset') {
-                const forum = interaction.options.getChannel('forum', true);
-
-                if (forum.type !== ChannelType.GuildForum) {
                     await interaction.reply({
-                        content: 'forum にはフォーラムチャンネルを指定してください。',
+                        content: `現在の未所持チェック対象ロール: <@&${roleId}>`,
                     });
                     return;
                 }
 
-                const deleted = await kv.hDel(guildMapKey(interaction.guildId), forum.id);
+                // /role unset
+                if (sub === 'unset') {
+                    const deleted = await kv.del(missingRoleKey(interaction.guildId));
 
-                if (!deleted) {
+                    if (!deleted) {
+                        await interaction.reply({
+                            content: '未所持チェック対象ロールは設定されていません。',
+                        });
+                        return;
+                    }
+
                     await interaction.reply({
-                        content: `そのフォーラムの設定は見つかりませんでした: <#${forum.id}>`,
+                        content: '未所持チェック対象ロールの設定を削除しました。',
                     });
                     return;
                 }
 
-                await interaction.reply({
-                    content: `設定を削除しました: <#${forum.id}>`,
-                });
-                return;
+                // /role missing
+                if (sub === 'missing') {
+                    const roleId = await kv.get(missingRoleKey(interaction.guildId));
+
+                    if (!roleId) {
+                        await interaction.reply({
+                            content: '未所持チェック対象ロールが設定されていません。先に /role set を使ってください。',
+                        });
+                        return;
+                    }
+
+                    const targetRole = await interaction.guild.roles.fetch(roleId).catch(() => null);
+
+                    if (!targetRole) {
+                        await interaction.reply({
+                            content: '設定されているロールが見つかりませんでした。/role set で設定し直してください。',
+                        });
+                        return;
+                    }
+
+                    await interaction.guild.members.fetch();
+
+                    const membersWithoutRole = interaction.guild.members.cache.filter(
+                        (member) => !member.user.bot && !member.roles.cache.has(targetRole.id)
+                    );
+
+                    if (membersWithoutRole.size === 0) {
+                        await interaction.reply({
+                            content: `ロール <@&${targetRole.id}> を持っていないメンバーはいません。`,
+                        });
+                        return;
+                    }
+
+                    const lines = membersWithoutRole.map(
+                        (member) => `- ${member.user.tag} (<@${member.id}>)`
+                    );
+
+                    const chunks = splitLinesToMessages(
+                        `ロール <@&${targetRole.id}> を持っていないメンバー一覧:\n`,
+                        lines
+                    );
+
+                    await interaction.reply({ content: chunks[0] });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({ content: chunks[i] });
+                    }
+
+                    return;
+                }
             }
         } catch (error) {
             console.error('interactionCreate でエラー:', error);
@@ -192,17 +355,15 @@ async function main() {
         }
     });
 
+    // =========================================================
     // フォーラムに新しいスレッドが立ったら通知
+    // =========================================================
     client.on(Events.ThreadCreate, async (thread) => {
         try {
             if (!thread.parent || thread.parent.type !== ChannelType.GuildForum) return;
 
-            // 保存済み設定から、この forum に対応する通知先を探す
             const targetId = await kv.hGet(guildMapKey(thread.guildId), thread.parentId);
             if (!targetId) return;
-
-            const target = await client.channels.fetch(targetId).catch(() => null);
-            if (!target) return;
 
             const ownerMention = thread.ownerId ? `<@${thread.ownerId}>` : '不明';
             const threadLink =
@@ -214,9 +375,10 @@ async function main() {
                 `スレ主: ${ownerMention}\n` +
                 `リンク: ${threadLink}`;
 
-            // テキストチャンネルでもスレッドでも send() できる
-            if (typeof target.send === 'function') {
-                await target.send(message);
+            const result = await sendToTarget(client, targetId, message);
+
+            if (!result.ok) {
+                console.warn(`通知送信失敗: ${result.reason}, targetId=${targetId}`);
             }
         } catch (error) {
             console.error('threadCreate でエラー:', error);
@@ -231,7 +393,9 @@ main().catch((error) => {
     process.exit(1);
 });
 
+// =========================================================
 // keep-alive 用
+// =========================================================
 const express = require('express');
 const app = express();
 const PORT = Number(process.env.PORT || 10000);

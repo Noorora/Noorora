@@ -15,12 +15,15 @@ if (!TOKEN || !APP_ID) {
 }
 
 const commands = [
+    // =========================================================
+    // /forum
+    // =========================================================
     new SlashCommandBuilder()
-        .setName('setup')
-        .setDescription('フォーラムと通知先の対応を登録します')
+        .setName('forum')
+        .setDescription('フォーラム通知設定を管理します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 
-        // /setup channel
+        // /forum channel
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('channel')
@@ -41,7 +44,7 @@ const commands = [
                 ),
         )
 
-        // /setup thread
+        // /forum thread
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('thread')
@@ -60,24 +63,69 @@ const commands = [
                         .setRequired(true),
                 ),
         )
+
+        // /forum show
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('show')
+                .setDescription('現在のフォーラム通知設定一覧を表示します'),
+        )
+
+        // /forum unset
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('unset')
+                .setDescription('フォーラム通知設定を削除します')
+                .addChannelOption((option) =>
+                    option
+                        .setName('forum')
+                        .setDescription('設定を削除したいフォーラム')
+                        .addChannelTypes(ChannelType.GuildForum)
+                        .setRequired(true),
+                ),
+        )
         .toJSON(),
 
+    // =========================================================
+    // /role
+    // =========================================================
     new SlashCommandBuilder()
-        .setName('showsetup')
-        .setDescription('このサーバーの現在の設定一覧を表示します')
+        .setName('role')
+        .setDescription('ロール未所持チェック設定を管理します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-        .toJSON(),
 
-    new SlashCommandBuilder()
-        .setName('unset')
-        .setDescription('フォーラムの設定を削除します')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-        .addChannelOption((option) =>
-            option
-                .setName('forum')
-                .setDescription('設定を削除したいフォーラム')
-                .addChannelTypes(ChannelType.GuildForum)
-                .setRequired(true),
+        // /role set
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('set')
+                .setDescription('未所持チェック対象ロールを設定します')
+                .addRoleOption((option) =>
+                    option
+                        .setName('target')
+                        .setDescription('対象にするロール')
+                        .setRequired(true),
+                ),
+        )
+
+        // /role show
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('show')
+                .setDescription('現在設定されている未所持チェック対象ロールを表示します'),
+        )
+
+        // /role unset
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('unset')
+                .setDescription('未所持チェック対象ロールの設定を削除します'),
+        )
+
+        // /role missing
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('missing')
+                .setDescription('設定済みロールを持っていないメンバー一覧を表示します'),
         )
         .toJSON(),
 ];
@@ -97,4 +145,3 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
         process.exit(1);
     }
 })();
-``
