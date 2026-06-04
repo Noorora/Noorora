@@ -321,6 +321,7 @@ async function main() {
                     if (!roleId) {
                         await interaction.reply({
                             content: '未所持チェック対象ロールが設定されていません。先に /role set を使ってください。',
+                            ephemeral: true,
                         });
                         return;
                     }
@@ -330,6 +331,7 @@ async function main() {
                     if (!targetRole) {
                         await interaction.reply({
                             content: '設定されているロールが見つかりませんでした。/role set で設定し直してください。',
+                            ephemeral: true,
                         });
                         return;
                     }
@@ -343,11 +345,12 @@ async function main() {
                     if (membersWithoutRole.size === 0) {
                         await interaction.reply({
                             content: `ロール <@&${targetRole.id}> を持っていないメンバーはいません。`,
+                            ephemeral: true,
                         });
                         return;
                     }
 
-                    // メンションを飛ばさない表示
+                    // メンションを飛ばさない一覧表示
                     const lines = membersWithoutRole.map(
                         (member, index) => `${index + 1}. ${member.user.tag} / ID: ${member.id}`
                     );
@@ -357,10 +360,16 @@ async function main() {
                         lines
                     );
 
-                    await interaction.reply({ content: chunks[0] });
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
 
                     for (let i = 1; i < chunks.length; i++) {
-                        await interaction.followUp({ content: chunks[i] });
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
                     }
 
                     return;
