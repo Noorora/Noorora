@@ -141,19 +141,6 @@ const commands = [
         .setDescription('チャンネル発言状況を確認します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('channelnever')
-                .setDescription('指定チャンネルで一度も発言していないメンバー一覧を表示します')
-                .addChannelOption((option) =>
-                    option
-                        .setName('channel')
-                        .setDescription('確認したい通常テキストチャンネル')
-                        .addChannelTypes(ChannelType.GuildText)
-                        .setRequired(true),
-                ),
-    )
-
 
         .addSubcommand((subcommand) =>
             subcommand
