@@ -63,7 +63,7 @@ function splitLinesToMessages(header, lines, maxLength = 1900) {
     return chunks;
 }
 
-// ===== 文字列分割用（スペース区切り） =====
+// ===== スペース区切り分割用 =====
 function splitBySpaceToMessages(header, items, maxLength = 1800) {
     const chunks = [];
     let current = header;
@@ -350,9 +350,9 @@ async function main() {
                         return;
                     }
 
-                    // メンションを飛ばさない一覧表示
+                    // 昔の表示形式に戻す
                     const lines = membersWithoutRole.map(
-                        (member, index) => `${index + 1}. ${member.user.tag} / ID: ${member.id}`
+                        (member) => `• ${member.user.tag} (<@${member.id}>)`
                     );
 
                     const chunks = splitLinesToMessages(
@@ -411,9 +411,7 @@ async function main() {
                         return;
                     }
 
-                    // rawメンション文字列
                     const rawMentions = membersWithoutRole.map((member) => `<@${member.id}>`);
-
                     const chunks = splitBySpaceToMessages('', rawMentions);
 
                     await interaction.reply({
@@ -509,3 +507,4 @@ app.get('/health', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`HTTP server listening on ${PORT}`);
 });
+``
