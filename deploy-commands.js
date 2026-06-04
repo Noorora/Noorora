@@ -127,6 +127,13 @@ const commands = [
                 .setName('missing')
                 .setDescription('設定済みロールを持っていないメンバー一覧を表示します'),
         )
+
+        // /role mentionmissing
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('mentionmissing')
+                .setDescription('設定済みロールを持っていないメンバーをメンション形式で表示します')
+        )
         .toJSON(),
 ];
 

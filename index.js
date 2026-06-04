@@ -5,6 +5,7 @@ const {
     Events,
 } = require('discord.js');
 const { createClient } = require('redis');
+const express = require('express');
 
 // ===== 設定ここから =====
 if (process.env.RUN_ON_RENDER !== 'true') {
@@ -49,13 +50,16 @@ function splitLinesToMessages(header, lines, maxLength = 1900) {
 
     for (const line of lines) {
         if ((current + line + '\n').length > maxLength) {
-            chunks.push(current);
+            chunks.push(current.trimEnd());
             current = '';
         }
         current += line + '\n';
     }
 
-    if (current) chunks.push(current);
+    if (current.trim()) {
+        chunks.push(current.trimEnd());
+    }
+
     return chunks;
 }
 
@@ -105,6 +109,7 @@ async function main() {
         if (!interaction.inGuild()) {
             await interaction.reply({
                 content: 'このコマンドはサーバー内でのみ使用できます。',
+                ephemeral: true,
             });
             return;
         }
@@ -339,6 +344,75 @@ async function main() {
 
                     return;
                 }
+
+                // /role mentionmissing
+                if (sub === 'mentionmissing') {
+                    const roleId = await kv.get(missingRoleKey(interaction.guildId));
+
+                    if (!roleId) {
+                        await interaction.reply({
+                            content: '未所持チェック対象ロールが設定されていません。先に /role set を使ってください。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const targetRole = await interaction.guild.roles.fetch(roleId).catch(() => null);
+
+                    if (!targetRole) {
+                        await interaction.reply({
+                            content: '設定されているロールが見つかりませんでした。/role set で設定し直してください。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    await interaction.guild.members.fetch();
+
+                    const membersWithoutRole = interaction.guild.members.cache.filter(
+                        (member) => !member.user.bot && !member.roles.cache.has(targetRole.id)
+                    );
+
+                    if (membersWithoutRole.size === 0) {
+                        await interaction.reply({
+                            content: `ロール <@&${targetRole.id}> を持っていないメンバーはいません。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    // @aaa @bbb @ccc 形式
+                    const mentions = membersWithoutRole.map((member) => `<@${member.id}>`);
+
+                    const chunks = [];
+                    let current = '';
+
+                    for (const mention of mentions) {
+                        if ((current + mention + ' ').length > 1900) {
+                            chunks.push(current.trim());
+                            current = '';
+                        }
+                        current += `${mention} `;
+                    }
+
+                    if (current.trim()) {
+                        chunks.push(current.trim());
+                    }
+
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+
+                    return;
+                }
             }
         } catch (error) {
             console.error('interactionCreate でエラー:', error);
@@ -346,10 +420,12 @@ async function main() {
             if (interaction.replied || interaction.deferred) {
                 await interaction.followUp({
                     content: 'コマンド実行中にエラーが発生しました。',
+                    ephemeral: true,
                 });
             } else {
                 await interaction.reply({
                     content: 'コマンド実行中にエラーが発生しました。',
+                    ephemeral: true,
                 });
             }
         }
@@ -396,7 +472,6 @@ main().catch((error) => {
 // =========================================================
 // keep-alive 用
 // =========================================================
-const express = require('express');
 const app = express();
 const PORT = Number(process.env.PORT || 10000);
 
