@@ -63,6 +63,26 @@ function splitLinesToMessages(header, lines, maxLength = 1900) {
     return chunks;
 }
 
+// ===== 文字列分割用（スペース区切り） =====
+function splitBySpaceToMessages(header, items, maxLength = 1800) {
+    const chunks = [];
+    let current = header;
+
+    for (const item of items) {
+        if ((current + item + ' ').length > maxLength) {
+            chunks.push(current.trimEnd());
+            current = '';
+        }
+        current += `${item} `;
+    }
+
+    if (current.trim()) {
+        chunks.push(current.trimEnd());
+    }
+
+    return chunks;
+}
+
 // ===== 転送先へ送信 =====
 async function sendToTarget(client, targetId, message) {
     const target = await client.channels.fetch(targetId).catch(() => null);
@@ -327,8 +347,9 @@ async function main() {
                         return;
                     }
 
+                    // メンションを飛ばさない表示
                     const lines = membersWithoutRole.map(
-                        (member) => `- ${member.user.tag} (<@${member.id}>)`
+                        (member, index) => `${index + 1}. ${member.user.tag} / ID: ${member.id}`
                     );
 
                     const chunks = splitLinesToMessages(
@@ -382,25 +403,10 @@ async function main() {
                     }
 
                     // rawメンション文字列
-                    const rawMentions = membersWithoutRole.map((member) => `<@${member.id}>`).join(' ');
+                    const rawMentions = membersWithoutRole.map((member) => `<@${member.id}>`);
 
-                    // Discordの文字数制限対策
-                    const chunks = [];
-                    let current = '';
+                    const chunks = splitBySpaceToMessages('', rawMentions);
 
-                    for (const mention of rawMentions.split(' ')) {
-                        if ((current + mention + ' ').length > 1800) {
-                            chunks.push(current.trim());
-                            current = '';
-                        }
-                        current += `${mention} `;
-                    }
-
-                    if (current.trim()) {
-                        chunks.push(current.trim());
-                    }
-
-                    // 1通目
                     await interaction.reply({
                         content:
                             `ロール <@&${targetRole.id}> を持っていないメンバーのコピペ用メンションです。\n` +
@@ -411,7 +417,6 @@ async function main() {
                         ephemeral: true,
                     });
 
-                    // 2通目以降（人数が多い場合）
                     for (let i = 1; i < chunks.length; i++) {
                         await interaction.followUp({
                             content: '```txt\n' + chunks[i] + '\n```',
