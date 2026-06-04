@@ -381,45 +381,40 @@ async function main() {
                         return;
                     }
 
-                    // 生のメンション文字列
+                    // rawメンション文字列
                     const rawMentions = membersWithoutRole.map((member) => `<@${member.id}>`).join(' ');
 
-                    // プレビュー用（Discord上で見やすい）
-                    const previewMentions = membersWithoutRole.map((member) => `<@${member.id}>`);
-
-                    const previewChunks = [];
+                    // Discordの文字数制限対策
+                    const chunks = [];
                     let current = '';
 
-                    for (const mention of previewMentions) {
-                        if ((current + mention + ' ').length > 1900) {
-                            previewChunks.push(current.trim());
+                    for (const mention of rawMentions.split(' ')) {
+                        if ((current + mention + ' ').length > 1800) {
+                            chunks.push(current.trim());
                             current = '';
                         }
                         current += `${mention} `;
                     }
 
                     if (current.trim()) {
-                        previewChunks.push(current.trim());
+                        chunks.push(current.trim());
                     }
 
-                    // txtファイルとして添付
-                    const attachment = {
-                        attachment: Buffer.from(rawMentions, 'utf-8'),
-                        name: 'mentionmissing.txt',
-                    };
-
+                    // 1通目
                     await interaction.reply({
                         content:
-                            `ロール <@&${targetRole.id}> を持っていないメンバーのコピペ用テキストを添付しました。\n` +
-                            `下の txt を開いてコピーしてください。`,
-                        files: [attachment],
+                            `ロール <@&${targetRole.id}> を持っていないメンバーのコピペ用メンションです。\n` +
+                            `下のコードブロックをコピーして使ってください。\n\n` +
+                            '```txt\n' +
+                            chunks[0] +
+                            '\n```',
                         ephemeral: true,
                     });
 
-                    // ついでにプレビューも送る（本人だけ見える）
-                    for (const chunk of previewChunks) {
+                    // 2通目以降（人数が多い場合）
+                    for (let i = 1; i < chunks.length; i++) {
                         await interaction.followUp({
-                            content: chunk,
+                            content: '```txt\n' + chunks[i] + '\n```',
                             ephemeral: true,
                         });
                     }
