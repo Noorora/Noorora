@@ -425,15 +425,7 @@ async function main() {
 
                     return;
                 }
-            }
-
-            // =========================================================
-            // /activity 系
-            // =========================================================
-            if (interaction.commandName === 'activity') {
-                const sub = interaction.options.getSubcommand();
-
-                // /activity channelnever
+                // /role channelnever
                 if (sub === 'channelnever') {
                     const targetRole = interaction.options.getRole('role', true);
                     const channel = interaction.options.getChannel('channel', true);
@@ -485,6 +477,65 @@ async function main() {
                     for (let i = 1; i < chunks.length; i++) {
                         await interaction.followUp({
                             content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+
+                    return;
+                }
+
+                // /role mentionchannelnever
+                if (sub === 'mentionchannelnever') {
+                    const targetRole = interaction.options.getRole('role', true);
+                    const channel = interaction.options.getChannel('channel', true);
+
+                    if (channel.type !== ChannelType.GuildText) {
+                        await interaction.reply({
+                            content: 'channel には通常のテキストチャンネルを指定してください。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    // 履歴取得は時間がかかることがあるので先に defer
+                    await interaction.deferReply({ ephemeral: true });
+
+                    const { speakerIds, fetchedCount } = await collectSpeakerIdsFromChannel(channel);
+
+                    await interaction.guild.members.fetch();
+
+                    const filteredMembers = interaction.guild.members.cache.filter(
+                        (member) =>
+                            !member.user.bot &&
+                            !member.roles.cache.has(targetRole.id) &&
+                            !speakerIds.has(member.id)
+                    );
+
+                    if (filteredMembers.size === 0) {
+                        await interaction.editReply({
+                            content:
+                                `ロール <@&${targetRole.id}> を持っておらず、` +
+                                `チャンネル <#${channel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバーはいません。`,
+                        });
+                        return;
+                    }
+
+                    const rawMentions = filteredMembers.map((member) => `<@${member.id}>`);
+                    const chunks = splitBySpaceToMessages('', rawMentions);
+
+                    await interaction.editReply({
+                        content:
+                            `ロール <@&${targetRole.id}> を持っておらず、` +
+                            `チャンネル <#${channel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバーのコピペ用メンションです。\n` +
+                            `下のコードブロックをコピーして使ってください。\n\n` +
+                            '```txt\n' +
+                            chunks[0] +
+                            '\n```',
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: '```txt\n' + chunks[i] + '\n```',
                             ephemeral: true,
                         });
                     }

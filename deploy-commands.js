@@ -130,22 +130,29 @@ const commands = [
                         .setDescription('持っていてはいけないロール')
                         .setRequired(true),
             ),
-        )
-        .toJSON(),
-
-    // =========================================================
-    // /activity
-    // =========================================================
-    new SlashCommandBuilder()
-        .setName('activity')
-        .setDescription('チャンネル発言状況を確認します')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-
-
+    )
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('channelnever')
                 .setDescription('指定したロールを持っておらず、指定したチャンネルで一度も発言していないメンバー一覧を表示します')
+                .addRoleOption((option) =>
+                    option
+                        .setName('role')
+                        .setDescription('持っていないか確認したいロール')
+                        .setRequired(true),
+                )
+                .addChannelOption((option) =>
+                    option
+                        .setName('channel')
+                        .setDescription('確認したい通常テキストチャンネル')
+                        .addChannelTypes(ChannelType.GuildText)
+                        .setRequired(true),
+                ),
+    )
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('mentionchannelnever')
+                .setDescription('指定したロールを持っておらず、指定したチャンネルで一度も発言していないメンバーのコピペ用メンションを表示します')
                 .addRoleOption((option) =>
                     option
                         .setName('role')
