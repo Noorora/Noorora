@@ -381,32 +381,45 @@ async function main() {
                         return;
                     }
 
-                    // @aaa @bbb @ccc 形式
-                    const mentions = membersWithoutRole.map((member) => `<@${member.id}>`);
+                    // 生のメンション文字列
+                    const rawMentions = membersWithoutRole.map((member) => `<@${member.id}>`).join(' ');
 
-                    const chunks = [];
+                    // プレビュー用（Discord上で見やすい）
+                    const previewMentions = membersWithoutRole.map((member) => `<@${member.id}>`);
+
+                    const previewChunks = [];
                     let current = '';
 
-                    for (const mention of mentions) {
+                    for (const mention of previewMentions) {
                         if ((current + mention + ' ').length > 1900) {
-                            chunks.push(current.trim());
+                            previewChunks.push(current.trim());
                             current = '';
                         }
                         current += `${mention} `;
                     }
 
                     if (current.trim()) {
-                        chunks.push(current.trim());
+                        previewChunks.push(current.trim());
                     }
 
+                    // txtファイルとして添付
+                    const attachment = {
+                        attachment: Buffer.from(rawMentions, 'utf-8'),
+                        name: 'mentionmissing.txt',
+                    };
+
                     await interaction.reply({
-                        content: chunks[0],
+                        content:
+                            `ロール <@&${targetRole.id}> を持っていないメンバーのコピペ用テキストを添付しました。\n` +
+                            `下の txt を開いてコピーしてください。`,
+                        files: [attachment],
                         ephemeral: true,
                     });
 
-                    for (let i = 1; i < chunks.length; i++) {
+                    // ついでにプレビューも送る（本人だけ見える）
+                    for (const chunk of previewChunks) {
                         await interaction.followUp({
-                            content: chunks[i],
+                            content: chunk,
                             ephemeral: true,
                         });
                     }
