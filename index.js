@@ -489,6 +489,64 @@ async function main() {
 
                     return;
                 }
+                // /activity channelnever
+                if (sub === 'channelnever') {
+                    const targetRole = interaction.options.getRole('role', true);
+                    const channel = interaction.options.getChannel('channel', true);
+
+                    if (channel.type !== ChannelType.GuildText) {
+                        await interaction.reply({
+                            content: 'channel には通常のテキストチャンネルを指定してください。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    // 履歴取得は時間がかかることがあるので先に defer
+                    await interaction.deferReply({ ephemeral: true });
+
+                    const { speakerIds, fetchedCount } = await collectSpeakerIdsFromChannel(channel);
+
+                    await interaction.guild.members.fetch();
+
+                    const filteredMembers = interaction.guild.members.cache.filter(
+                        (member) =>
+                            !member.user.bot &&
+                            !member.roles.cache.has(targetRole.id) &&
+                            !speakerIds.has(member.id)
+                    );
+
+                    if (filteredMembers.size === 0) {
+                        await interaction.editReply({
+                            content:
+                                `ロール <@&${targetRole.id}> を持っておらず、` +
+                                `チャンネル <#${channel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバーはいません。`,
+                        });
+                        return;
+                    }
+
+                    const lines = filteredMembers.map(
+                        (member) => `・${member.user.tag} (<@${member.id}>)`
+                    );
+
+                    const chunks = splitLinesToMessages(
+                        `ロール <@&${targetRole.id}> を持っておらず、チャンネル <#${channel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバー一覧:\n`,
+                        lines
+                    );
+
+                    await interaction.editReply({
+                        content: chunks[0],
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+
+                    return;
+                }
             }
         } catch (error) {
             console.error('interactionCreate でエラー:', error);
