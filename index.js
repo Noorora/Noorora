@@ -375,6 +375,52 @@ async function main() {
                     return;
                 }
 
+                // /role filter
+                if (sub === 'filter') {
+                    const hasRole = interaction.options.getRole('has', true);
+                    const notRole = interaction.options.getRole('not', true);
+
+                    await interaction.guild.members.fetch();
+
+                    const filteredMembers = interaction.guild.members.cache.filter(
+                        (member) =>
+                            !member.user.bot &&
+                            member.roles.cache.has(hasRole.id) &&
+                            !member.roles.cache.has(notRole.id)
+                    );
+
+                    if (filteredMembers.size === 0) {
+                        await interaction.reply({
+                            content: `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバーはいません。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const lines = filteredMembers.map(
+                        (member, index) => `${index + 1}. ${member.user.tag} / ID: ${member.id}`
+                    );
+
+                    const chunks = splitLinesToMessages(
+                        `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバー一覧:\n`,
+                        lines
+                    );
+
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+
+                    return;
+                }
+
                 // /role mentionmissing
                 if (sub === 'mentionmissing') {
                     const roleId = await kv.get(missingRoleKey(interaction.guildId));

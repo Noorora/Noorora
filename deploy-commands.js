@@ -133,6 +133,25 @@ const commands = [
             subcommand
                 .setName('mentionmissing')
                 .setDescription('設定済みロールを持っていないメンバーをメンション形式で表示します')
+    )
+
+        // /role filter
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('filter')
+                .setDescription('特定ロールを持ち、別の特定ロールを持っていないメンバー一覧を表示します')
+                .addRoleOption((option) =>
+                    option
+                        .setName('has')
+                        .setDescription('持っている必要があるロール')
+                        .setRequired(true),
+                )
+                .addRoleOption((option) =>
+                    option
+                        .setName('not')
+                        .setDescription('持っていてはいけないロール')
+                        .setRequired(true),
+                ),
         )
         .toJSON(),
 ];
