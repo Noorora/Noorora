@@ -39,10 +39,6 @@ function guildMapKey(guildId) {
     return `forum-log-map:${guildId}`;
 }
 
-function missingRoleKey(guildId) {
-    return `missing-role:${guildId}`;
-}
-
 // ===== 長文分割用 =====
 function splitLinesToMessages(header, lines, maxLength = 1900) {
     const chunks = [];
@@ -268,73 +264,9 @@ async function main() {
             if (interaction.commandName === 'role') {
                 const sub = interaction.options.getSubcommand();
 
-                // /role set
-                if (sub === 'set') {
-                    const role = interaction.options.getRole('target', true);
-
-                    await kv.set(missingRoleKey(interaction.guildId), role.id);
-
-                    await interaction.reply({
-                        content: `未所持チェック対象ロールを設定しました: <@&${role.id}>`,
-                    });
-                    return;
-                }
-
-                // /role show
-                if (sub === 'show') {
-                    const roleId = await kv.get(missingRoleKey(interaction.guildId));
-
-                    if (!roleId) {
-                        await interaction.reply({
-                            content: '未所持チェック対象ロールはまだ設定されていません。',
-                        });
-                        return;
-                    }
-
-                    await interaction.reply({
-                        content: `現在の未所持チェック対象ロール: <@&${roleId}>`,
-                    });
-                    return;
-                }
-
-                // /role unset
-                if (sub === 'unset') {
-                    const deleted = await kv.del(missingRoleKey(interaction.guildId));
-
-                    if (!deleted) {
-                        await interaction.reply({
-                            content: '未所持チェック対象ロールは設定されていません。',
-                        });
-                        return;
-                    }
-
-                    await interaction.reply({
-                        content: '未所持チェック対象ロールの設定を削除しました。',
-                    });
-                    return;
-                }
-
                 // /role missing
                 if (sub === 'missing') {
-                    const roleId = await kv.get(missingRoleKey(interaction.guildId));
-
-                    if (!roleId) {
-                        await interaction.reply({
-                            content: '未所持チェック対象ロールが設定されていません。先に /role set を使ってください。',
-                            ephemeral: true,
-                        });
-                        return;
-                    }
-
-                    const targetRole = await interaction.guild.roles.fetch(roleId).catch(() => null);
-
-                    if (!targetRole) {
-                        await interaction.reply({
-                            content: '設定されているロールが見つかりませんでした。/role set で設定し直してください。',
-                            ephemeral: true,
-                        });
-                        return;
-                    }
+                    const targetRole = interaction.options.getRole('role', true);
 
                     await interaction.guild.members.fetch();
 
@@ -350,9 +282,8 @@ async function main() {
                         return;
                     }
 
-                    // 昔の表示形式に戻す
                     const lines = membersWithoutRole.map(
-                        (member) => `• ${member.user.tag} (<@${member.id}>)`
+                        (member) => `・${member.user.tag} (<@${member.id}>)`
                     );
 
                     const chunks = splitLinesToMessages(
@@ -375,73 +306,9 @@ async function main() {
                     return;
                 }
 
-                // /role filter
-                if (sub === 'filter') {
-                    const hasRole = interaction.options.getRole('has', true);
-                    const notRole = interaction.options.getRole('not', true);
-
-                    await interaction.guild.members.fetch();
-
-                    const filteredMembers = interaction.guild.members.cache.filter(
-                        (member) =>
-                            !member.user.bot &&
-                            member.roles.cache.has(hasRole.id) &&
-                            !member.roles.cache.has(notRole.id)
-                    );
-
-                    if (filteredMembers.size === 0) {
-                        await interaction.reply({
-                            content: `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバーはいません。`,
-                            ephemeral: true,
-                        });
-                        return;
-                    }
-
-                    const lines = filteredMembers.map(
-                        (member, index) => `${index + 1}. ${member.user.tag} / ID: ${member.id}`
-                    );
-
-                    const chunks = splitLinesToMessages(
-                        `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバー一覧:\n`,
-                        lines
-                    );
-
-                    await interaction.reply({
-                        content: chunks[0],
-                        ephemeral: true,
-                    });
-
-                    for (let i = 1; i < chunks.length; i++) {
-                        await interaction.followUp({
-                            content: chunks[i],
-                            ephemeral: true,
-                        });
-                    }
-
-                    return;
-                }
-
                 // /role mentionmissing
                 if (sub === 'mentionmissing') {
-                    const roleId = await kv.get(missingRoleKey(interaction.guildId));
-
-                    if (!roleId) {
-                        await interaction.reply({
-                            content: '未所持チェック対象ロールが設定されていません。先に /role set を使ってください。',
-                            ephemeral: true,
-                        });
-                        return;
-                    }
-
-                    const targetRole = await interaction.guild.roles.fetch(roleId).catch(() => null);
-
-                    if (!targetRole) {
-                        await interaction.reply({
-                            content: '設定されているロールが見つかりませんでした。/role set で設定し直してください。',
-                            ephemeral: true,
-                        });
-                        return;
-                    }
+                    const targetRole = interaction.options.getRole('role', true);
 
                     await interaction.guild.members.fetch();
 
@@ -473,6 +340,52 @@ async function main() {
                     for (let i = 1; i < chunks.length; i++) {
                         await interaction.followUp({
                             content: '```txt\n' + chunks[i] + '\n```',
+                            ephemeral: true,
+                        });
+                    }
+
+                    return;
+                }
+
+                // /role filter
+                if (sub === 'filter') {
+                    const hasRole = interaction.options.getRole('has', true);
+                    const notRole = interaction.options.getRole('not', true);
+
+                    await interaction.guild.members.fetch();
+
+                    const filteredMembers = interaction.guild.members.cache.filter(
+                        (member) =>
+                            !member.user.bot &&
+                            member.roles.cache.has(hasRole.id) &&
+                            !member.roles.cache.has(notRole.id)
+                    );
+
+                    if (filteredMembers.size === 0) {
+                        await interaction.reply({
+                            content: `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバーはいません。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const lines = filteredMembers.map(
+                        (member) => `・${member.user.tag} (<@${member.id}>)`
+                    );
+
+                    const chunks = splitLinesToMessages(
+                        `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバー一覧:\n`,
+                        lines
+                    );
+
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
                             ephemeral: true,
                         });
                     }
@@ -553,4 +466,3 @@ app.get('/health', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`HTTP server listening on ${PORT}`);
 });
-``

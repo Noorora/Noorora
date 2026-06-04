@@ -91,49 +91,34 @@ const commands = [
     // =========================================================
     new SlashCommandBuilder()
         .setName('role')
-        .setDescription('ロール未所持チェック設定を管理します')
+        .setDescription('ロール条件でメンバー一覧を表示します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-
-        // /role set
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('set')
-                .setDescription('未所持チェック対象ロールを設定します')
-                .addRoleOption((option) =>
-                    option
-                        .setName('target')
-                        .setDescription('対象にするロール')
-                        .setRequired(true),
-                ),
-        )
-
-        // /role show
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('show')
-                .setDescription('現在設定されている未所持チェック対象ロールを表示します'),
-        )
-
-        // /role unset
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('unset')
-                .setDescription('未所持チェック対象ロールの設定を削除します'),
-        )
 
         // /role missing
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('missing')
-                .setDescription('設定済みロールを持っていないメンバー一覧を表示します'),
+                .setDescription('指定したロールを持っていないメンバー一覧を表示します')
+                .addRoleOption((option) =>
+                    option
+                        .setName('role')
+                        .setDescription('持っていないか確認したいロール')
+                        .setRequired(true),
+                ),
         )
 
         // /role mentionmissing
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('mentionmissing')
-                .setDescription('設定済みロールを持っていないメンバーをメンション形式で表示します')
-    )
+                .setDescription('指定したロールを持っていないメンバーのコピペ用メンションを表示します')
+                .addRoleOption((option) =>
+                    option
+                        .setName('role')
+                        .setDescription('持っていないか確認したいロール')
+                        .setRequired(true),
+                ),
+        )
 
         // /role filter
         .addSubcommand((subcommand) =>
@@ -153,7 +138,7 @@ const commands = [
                         .setRequired(true),
                 ),
         )
-        .toJSON(),
+        .toJSON()
 ];
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
