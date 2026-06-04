@@ -295,10 +295,13 @@ async function main() {
             // /role 系
             // =========================================================
             if (interaction.commandName === 'role') {
+                const group = interaction.options.getSubcommandGroup();
                 const sub = interaction.options.getSubcommand();
 
-                // /role missing
-                if (sub === 'missing') {
+                // -------------------------
+                // /role missing list
+                // -------------------------
+                if (group === 'missing' && sub === 'list') {
                     const targetRole = interaction.options.getRole('role', true);
 
                     await interaction.guild.members.fetch();
@@ -339,8 +342,10 @@ async function main() {
                     return;
                 }
 
-                // /role mentionmissing
-                if (sub === 'mentionmissing') {
+                // -------------------------
+                // /role missing mention
+                // -------------------------
+                if (group === 'missing' && sub === 'mention') {
                     const targetRole = interaction.options.getRole('role', true);
 
                     await interaction.guild.members.fetch();
@@ -380,53 +385,10 @@ async function main() {
                     return;
                 }
 
-                // /role filter
-                if (sub === 'filter') {
-                    const hasRole = interaction.options.getRole('has', true);
-                    const notRole = interaction.options.getRole('not', true);
-
-                    await interaction.guild.members.fetch();
-
-                    const filteredMembers = interaction.guild.members.cache.filter(
-                        (member) =>
-                            !member.user.bot &&
-                            member.roles.cache.has(hasRole.id) &&
-                            !member.roles.cache.has(notRole.id)
-                    );
-
-                    if (filteredMembers.size === 0) {
-                        await interaction.reply({
-                            content: `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバーはいません。`,
-                            ephemeral: true,
-                        });
-                        return;
-                    }
-
-                    const lines = filteredMembers.map(
-                        (member) => `・${member.user.tag} (<@${member.id}>)`
-                    );
-
-                    const chunks = splitLinesToMessages(
-                        `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバー一覧:\n`,
-                        lines
-                    );
-
-                    await interaction.reply({
-                        content: chunks[0],
-                        ephemeral: true,
-                    });
-
-                    for (let i = 1; i < chunks.length; i++) {
-                        await interaction.followUp({
-                            content: chunks[i],
-                            ephemeral: true,
-                        });
-                    }
-
-                    return;
-                }
-                // /role channelnever
-                if (sub === 'channelnever') {
+                // -------------------------
+                // /role channelnever list
+                // -------------------------
+                if (group === 'channelnever' && sub === 'list') {
                     const targetRole = interaction.options.getRole('role', true);
                     const channel = interaction.options.getChannel('channel', true);
 
@@ -438,7 +400,6 @@ async function main() {
                         return;
                     }
 
-                    // 履歴取得は時間がかかることがあるので先に defer
                     await interaction.deferReply({ ephemeral: true });
 
                     const { speakerIds, fetchedCount } = await collectSpeakerIdsFromChannel(channel);
@@ -484,8 +445,10 @@ async function main() {
                     return;
                 }
 
-                // /role mentionchannelnever
-                if (sub === 'mentionchannelnever') {
+                // -------------------------
+                // /role channelnever mention
+                // -------------------------
+                if (group === 'channelnever' && sub === 'mention') {
                     const targetRole = interaction.options.getRole('role', true);
                     const channel = interaction.options.getChannel('channel', true);
 
@@ -497,7 +460,6 @@ async function main() {
                         return;
                     }
 
-                    // 履歴取得は時間がかかることがあるので先に defer
                     await interaction.deferReply({ ephemeral: true });
 
                     const { speakerIds, fetchedCount } = await collectSpeakerIdsFromChannel(channel);
@@ -531,6 +493,99 @@ async function main() {
                             '```txt\n' +
                             chunks[0] +
                             '\n```',
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: '```txt\n' + chunks[i] + '\n```',
+                            ephemeral: true,
+                        });
+                    }
+
+                    return;
+                }
+
+                // -------------------------
+                // /role filter
+                // -------------------------
+                // /role filter list
+                if (group === 'filter' && sub === 'list') {
+                    const hasRole = interaction.options.getRole('has', true);
+                    const notRole = interaction.options.getRole('not', true);
+
+                    await interaction.guild.members.fetch();
+
+                    const filteredMembers = interaction.guild.members.cache.filter(
+                        (member) =>
+                            !member.user.bot &&
+                            member.roles.cache.has(hasRole.id) &&
+                            !member.roles.cache.has(notRole.id)
+                    );
+
+                    if (filteredMembers.size === 0) {
+                        await interaction.reply({
+                            content: `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバーはいません。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const lines = filteredMembers.map(
+                        (member) => `・${member.user.tag} (<@${member.id}>)`
+                    );
+
+                    const chunks = splitLinesToMessages(
+                        `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバー一覧:\n`,
+                        lines
+                    );
+
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+
+                    return;
+                }
+                // /role filter mention
+                if (group === 'filter' && sub === 'mention') {
+                    const hasRole = interaction.options.getRole('has', true);
+                    const notRole = interaction.options.getRole('not', true);
+
+                    await interaction.guild.members.fetch();
+
+                    const filteredMembers = interaction.guild.members.cache.filter(
+                        (member) =>
+                            !member.user.bot &&
+                            member.roles.cache.has(hasRole.id) &&
+                            !member.roles.cache.has(notRole.id)
+                    );
+
+                    if (filteredMembers.size === 0) {
+                        await interaction.reply({
+                            content: `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバーはいません。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const rawMentions = filteredMembers.map((member) => `<@${member.id}>`);
+                    const chunks = splitBySpaceToMessages('', rawMentions);
+
+                    await interaction.reply({
+                        content:
+                            `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバーのコピペ用メンションです。\n` +
+                            `下のコードブロックをコピーして使ってください。\n\n` +
+                            '```txt\n' +
+                            chunks[0] +
+                            '\n```',
+                        ephemeral: true,
                     });
 
                     for (let i = 1; i < chunks.length; i++) {
@@ -620,4 +675,3 @@ app.get('/health', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`HTTP server listening on ${PORT}`);
 });
-``

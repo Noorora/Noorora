@@ -90,81 +90,118 @@ const commands = [
         .setDescription('ロール条件でメンバー一覧を表示します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 
-        .addSubcommand((subcommand) =>
-            subcommand
+        // /role missing list
+        .addSubcommandGroup((group) =>
+            group
                 .setName('missing')
-                .setDescription('指定したロールを持っていないメンバー一覧を表示します')
-                .addRoleOption((option) =>
-                    option
-                        .setName('role')
-                        .setDescription('持っていないか確認したいロール')
-                        .setRequired(true),
-                ),
-        )
-
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('mentionmissing')
-                .setDescription('指定したロールを持っていないメンバーのコピペ用メンションを表示します')
-                .addRoleOption((option) =>
-                    option
-                        .setName('role')
-                        .setDescription('持っていないか確認したいロール')
-                        .setRequired(true),
-                ),
-        )
-
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('filter')
-                .setDescription('特定ロールを持ち、別の特定ロールを持っていないメンバー一覧を表示します')
-                .addRoleOption((option) =>
-                    option
-                        .setName('has')
-                        .setDescription('持っている必要があるロール')
-                        .setRequired(true),
+                .setDescription('指定したロールを持っていないメンバーを表示します')
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('list')
+                        .setDescription('指定したロールを持っていないメンバー一覧を表示します')
+                        .addRoleOption((option) =>
+                            option
+                                .setName('role')
+                                .setDescription('持っていないか確認したいロール')
+                                .setRequired(true),
+                        ),
                 )
-                .addRoleOption((option) =>
-                    option
-                        .setName('not')
-                        .setDescription('持っていてはいけないロール')
-                        .setRequired(true),
-            ),
-    )
-        .addSubcommand((subcommand) =>
-            subcommand
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('mention')
+                        .setDescription('指定したロールを持っていないメンバーのコピペ用メンションを表示します')
+                        .addRoleOption((option) =>
+                            option
+                                .setName('role')
+                                .setDescription('持っていないか確認したいロール')
+                                .setRequired(true),
+                        ),
+                ),
+        )
+
+        // /role channelnever list|mention
+        .addSubcommandGroup((group) =>
+            group
                 .setName('channelnever')
-                .setDescription('指定したロールを持っておらず、指定したチャンネルで一度も発言していないメンバー一覧を表示します')
-                .addRoleOption((option) =>
-                    option
-                        .setName('role')
-                        .setDescription('持っていないか確認したいロール')
-                        .setRequired(true),
+                .setDescription('指定したロールを持っておらず、指定したチャンネルで一度も発言していないメンバーを表示します')
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('list')
+                        .setDescription('一覧表示します')
+                        .addRoleOption((option) =>
+                            option
+                                .setName('role')
+                                .setDescription('持っていないか確認したいロール')
+                                .setRequired(true),
+                        )
+                        .addChannelOption((option) =>
+                            option
+                                .setName('channel')
+                                .setDescription('確認したい通常テキストチャンネル')
+                                .addChannelTypes(ChannelType.GuildText)
+                                .setRequired(true),
+                        ),
                 )
-                .addChannelOption((option) =>
-                    option
-                        .setName('channel')
-                        .setDescription('確認したい通常テキストチャンネル')
-                        .addChannelTypes(ChannelType.GuildText)
-                        .setRequired(true),
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('mention')
+                        .setDescription('コピペ用メンションを表示します')
+                        .addRoleOption((option) =>
+                            option
+                                .setName('role')
+                                .setDescription('持っていないか確認したいロール')
+                                .setRequired(true),
+                        )
+                        .addChannelOption((option) =>
+                            option
+                                .setName('channel')
+                                .setDescription('確認したい通常テキストチャンネル')
+                                .addChannelTypes(ChannelType.GuildText)
+                                .setRequired(true),
+                        ),
                 ),
-    )
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('mentionchannelnever')
-                .setDescription('指定したロールを持っておらず、指定したチャンネルで一度も発言していないメンバーのコピペ用メンションを表示します')
-                .addRoleOption((option) =>
-                    option
-                        .setName('role')
-                        .setDescription('持っていないか確認したいロール')
-                        .setRequired(true),
+        )
+
+        // /role filter list|mention
+        .addSubcommandGroup((group) =>
+            group
+                .setName('filter')
+                .setDescription('特定ロールを持ち、別の特定ロールを持っていないメンバーを表示します')
+
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('list')
+                        .setDescription('一覧表示します')
+                        .addRoleOption((option) =>
+                            option
+                                .setName('has')
+                                .setDescription('持っている必要があるロール')
+                                .setRequired(true),
+                        )
+                        .addRoleOption((option) =>
+                            option
+                                .setName('not')
+                                .setDescription('持っていてはいけないロール')
+                                .setRequired(true),
+                        ),
                 )
-                .addChannelOption((option) =>
-                    option
-                        .setName('channel')
-                        .setDescription('確認したい通常テキストチャンネル')
-                        .addChannelTypes(ChannelType.GuildText)
-                        .setRequired(true),
+
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('mention')
+                        .setDescription('コピペ用メンションを表示します')
+                        .addRoleOption((option) =>
+                            option
+                                .setName('has')
+                                .setDescription('持っている必要があるロール')
+                                .setRequired(true),
+                        )
+                        .addRoleOption((option) =>
+                            option
+                                .setName('not')
+                                .setDescription('持っていてはいけないロール')
+                                .setRequired(true),
+                        ),
                 ),
         )
         .toJSON(),
