@@ -352,67 +352,151 @@ async function main() {
 
                 // /forum unset
                 if (sub === 'unset') {
-                    const forum = interaction.options.getChannel('forum', true);
-                    const targetId = interaction.options.getString('target_id', false)?.trim();
+                    const forum = interaction.options.getChannel('forum', false);
+                    const targetChannel = interaction.options.getChannel('target_channel', false);
 
-                    if (forum.type !== ChannelType.GuildForum) {
+                    const guildId = interaction.guildId;
+
+                    // どちらも未指定
+                    if (!forum && !targetChannel) {
+                        await interaction.reply({
+                            content: 'forum か target_channel のどちらかは指定してください。',
+                        });
+                        return;
+                    }
+
+                    // forum が指定されている場合は型チェック
+                    if (forum && forum.type !== ChannelType.GuildForum) {
                         await interaction.reply({
                             content: 'forum にはフォーラムチャンネルを指定してください。',
                         });
                         return;
                     }
 
-                    const targetKey = forumTargetsKey(interaction.guildId, forum.id);
-                    const messageKey = forumMessageMapKey(interaction.guildId, forum.id);
-
-                    const targetIds = await kv.sMembers(targetKey);
-
-                    if (!targetIds || targetIds.length === 0) {
+                    // target_channel が指定されている場合は型チェック
+                    if (
+                        targetChannel &&
+                        ![
+                            ChannelType.GuildText,
+                            ChannelType.PublicThread,
+                            ChannelType.PrivateThread,
+                            ChannelType.AnnouncementThread,
+                        ].includes(targetChannel.type)
+                    ) {
                         await interaction.reply({
-                            content: `そのフォーラムの設定は見つかりませんでした: <#${forum.id}>`,
+                            content: 'target_channel にはテキストチャンネルまたはスレッドを指定してください。',
                         });
                         return;
                     }
 
-                    // target_id が指定されている → 1件だけ削除
-                    if (targetId) {
-                        const removed = await kv.sRem(targetKey, targetId);
+                    const forumIds = await kv.sMembers(forumIndexKey(guildId));
+
+                    if (!forumIds || forumIds.length === 0) {
+                        await interaction.reply({
+                            content: 'このサーバーにはまだフォーラム通知設定がありません。',
+                        });
+                        return;
+                    }
+
+                    let removedCount = 0;
+                    const removedLines = [];
+
+                    // 1. forum と target_channel の両方指定 → その1件だけ削除
+                    if (forum && targetChannel) {
+                        const targetKey = forumTargetsKey(guildId, forum.id);
+                        const messageKey = forumMessageMapKey(guildId, forum.id);
+
+                        const removed = await kv.sRem(targetKey, targetChannel.id);
 
                         if (!removed) {
                             await interaction.reply({
                                 content:
-                                    `フォーラム <#${forum.id}> に、通知先 <#${targetId}> の設定は見つかりませんでした。`,
+                                    `フォーラム <#${forum.id}> に、通知先 <#${targetChannel.id}> の設定は見つかりませんでした。`,
                             });
                             return;
                         }
 
-                        // その通知先に対応するカスタム文面も消す
-                        await kv.hDel(messageKey, targetId);
+                        await kv.hDel(messageKey, targetChannel.id);
 
-                        // 残り通知先が0件なら、indexからも外してキー削除
                         const remainingTargets = await kv.sMembers(targetKey);
                         if (!remainingTargets || remainingTargets.length === 0) {
                             await kv.del(targetKey);
                             await kv.del(messageKey);
-                            await kv.sRem(forumIndexKey(interaction.guildId), forum.id);
+                            await kv.sRem(forumIndexKey(guildId), forum.id);
                         }
 
                         await interaction.reply({
                             content:
-                                `フォーラム <#${forum.id}> から通知先 <#${targetId}> を削除しました。`,
+                                `フォーラム <#${forum.id}> から通知先 <#${targetChannel.id}> を削除しました。`,
                         });
                         return;
                     }
 
-                    // target_id が指定されていない → 全部削除
-                    await kv.del(targetKey);
-                    await kv.del(messageKey);
-                    await kv.sRem(forumIndexKey(interaction.guildId), forum.id);
+                    // 2. forum だけ指定 → そのフォーラムに紐づく通知先を全部削除
+                    if (forum && !targetChannel) {
+                        const targetKey = forumTargetsKey(guildId, forum.id);
+                        const messageKey = forumMessageMapKey(guildId, forum.id);
 
-                    await interaction.reply({
-                        content: `フォーラム <#${forum.id}> に紐づく通知先をすべて削除しました。`,
-                    });
-                    return;
+                        const targetIds = await kv.sMembers(targetKey);
+
+                        if (!targetIds || targetIds.length === 0) {
+                            await interaction.reply({
+                                content: `そのフォーラムの設定は見つかりませんでした: <#${forum.id}>`,
+                            });
+                            return;
+                        }
+
+                        await kv.del(targetKey);
+                        await kv.del(messageKey);
+                        await kv.sRem(forumIndexKey(guildId), forum.id);
+
+                        await interaction.reply({
+                            content: `フォーラム <#${forum.id}> に紐づく通知先をすべて削除しました。`,
+                        });
+                        return;
+                    }
+
+                    // 3. target_channel だけ指定 → その通知先に紐づくフォーラム設定を全部削除
+                    if (!forum && targetChannel) {
+                        for (const forumId of forumIds) {
+                            const targetKey = forumTargetsKey(guildId, forumId);
+                            const messageKey = forumMessageMapKey(guildId, forumId);
+
+                            const removed = await kv.sRem(targetKey, targetChannel.id);
+
+                            if (removed) {
+                                removedCount += 1;
+                                removedLines.push(`・フォーラム <#${forumId}> から通知先 <#${targetChannel.id}> を削除`);
+
+                                await kv.hDel(messageKey, targetChannel.id);
+
+                                const remainingTargets = await kv.sMembers(targetKey);
+                                if (!remainingTargets || remainingTargets.length === 0) {
+                                    await kv.del(targetKey);
+                                    await kv.del(messageKey);
+                                    await kv.sRem(forumIndexKey(guildId), forumId);
+                                }
+                            }
+                        }
+
+                        if (removedCount === 0) {
+                            await interaction.reply({
+                                content: `通知先 <#${targetChannel.id}> に紐づく設定は見つかりませんでした。`,
+                            });
+                            return;
+                        }
+
+                        const chunks = splitLinesToMessages(
+                            `通知先 <#${targetChannel.id}> に紐づく設定を ${removedCount} 件削除しました。\n`,
+                            removedLines
+                        );
+
+                        await interaction.reply({ content: chunks[0] });
+                        for (let i = 1; i < chunks.length; i++) {
+                            await interaction.followUp({ content: chunks[i] });
+                        }
+                        return;
+                    }
                 }
                 // /forum placeholders
                 if (sub === 'placeholders') {

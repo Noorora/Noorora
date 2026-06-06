@@ -87,17 +87,23 @@ const commands = [
                 .addChannelOption((option) =>
                     option
                         .setName('forum')
-                        .setDescription('設定を削除したいフォーラム')
+                        .setDescription('対象フォーラム（省略可）')
                         .addChannelTypes(ChannelType.GuildForum)
-                        .setRequired(true),
+                        .setRequired(false),
                 )
-                .addStringOption((option) =>
+                .addChannelOption((option) =>
                     option
-                        .setName('target_id')
-                        .setDescription('削除したい通知先のチャンネルIDまたはスレッドID（省略すると全部削除）')
+                        .setName('target_channel')
+                        .setDescription('対象通知先チャンネルまたはスレッド（省略可）')
+                        .addChannelTypes(
+                            ChannelType.GuildText,
+                            ChannelType.PublicThread,
+                            ChannelType.PrivateThread,
+                            ChannelType.AnnouncementThread
+                        )
                         .setRequired(false),
                 ),
-    )
+        )
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('placeholders')
