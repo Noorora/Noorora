@@ -127,7 +127,7 @@ const commands = [
                 .addSubcommand((subcommand) =>
                     subcommand
                         .setName('list')
-                        .setDescription('一覧表示します')
+                        .setDescription('指定したロールを持っておらず、指定したチャンネルで一度も発言していないメンバーを一覧表示します')
                         .addRoleOption((option) =>
                             option
                                 .setName('role')
@@ -145,7 +145,7 @@ const commands = [
                 .addSubcommand((subcommand) =>
                     subcommand
                         .setName('mention')
-                        .setDescription('コピペ用メンションを表示します')
+                        .setDescription('指定したロールを持っておらず、指定したチャンネルで一度も発言していないメンバーのコピペ用メンションを表示します')
                         .addRoleOption((option) =>
                             option
                                 .setName('role')
@@ -171,7 +171,7 @@ const commands = [
                 .addSubcommand((subcommand) =>
                     subcommand
                         .setName('list')
-                        .setDescription('一覧表示します')
+                        .setDescription('特定ロールを持ち、別の特定ロールを持っていないメンバーを一覧表示します')
                         .addRoleOption((option) =>
                             option
                                 .setName('has')
@@ -189,7 +189,7 @@ const commands = [
                 .addSubcommand((subcommand) =>
                     subcommand
                         .setName('mention')
-                        .setDescription('コピペ用メンションを表示します')
+                        .setDescription('特定ロールを持ち、別の特定ロールを持っていないメンバーのコピペ用メンションを表示します')
                         .addRoleOption((option) =>
                             option
                                 .setName('has')

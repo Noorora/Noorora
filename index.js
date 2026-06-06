@@ -35,8 +35,12 @@ kv.on('error', (error) => {
 });
 
 // ===== Redis キー =====
-function guildMapKey(guildId) {
-    return `forum-log-map:${guildId}`;
+function forumTargetsKey(guildId, forumId) {
+    return `forum-targets:${guildId}:${forumId}`;
+}
+
+function forumIndexKey(guildId) {
+    return `forum-index:${guildId}`;
 }
 
 // ===== 長文分割用 =====
@@ -189,11 +193,13 @@ async function main() {
                         return;
                     }
 
-                    await kv.hSet(guildMapKey(interaction.guildId), forum.id, logChannel.id);
+                    // 追加
+                    await kv.sAdd(forumTargetsKey(interaction.guildId, forum.id), logChannel.id);
+                    await kv.sAdd(forumIndexKey(interaction.guildId), forum.id);
 
                     await interaction.reply({
                         content:
-                            `フォーラム通知設定を登録しました。\n` +
+                            `フォーラム通知先を追加しました。\n` +
                             `フォーラム: <#${forum.id}>\n` +
                             `通知先チャンネル: <#${logChannel.id}>`,
                     });
@@ -228,11 +234,13 @@ async function main() {
                         return;
                     }
 
-                    await kv.hSet(guildMapKey(interaction.guildId), forum.id, targetThread.id);
+                    // 追加
+                    await kv.sAdd(forumTargetsKey(interaction.guildId, forum.id), targetThread.id);
+                    await kv.sAdd(forumIndexKey(interaction.guildId), forum.id);
 
                     await interaction.reply({
                         content:
-                            `フォーラム通知設定を登録しました。\n` +
+                            `フォーラム通知先を追加しました。\n` +
                             `フォーラム: <#${forum.id}>\n` +
                             `通知先スレッド: <#${targetThread.id}>`,
                     });
@@ -241,19 +249,36 @@ async function main() {
 
                 // /forum show
                 if (sub === 'show') {
-                    const settings = await kv.hGetAll(guildMapKey(interaction.guildId));
+                    const forumIds = await kv.sMembers(forumIndexKey(interaction.guildId));
 
-                    if (!settings || Object.keys(settings).length === 0) {
+                    if (!forumIds || forumIds.length === 0) {
                         await interaction.reply({
                             content: 'このサーバーにはまだフォーラム通知設定がありません。',
                         });
                         return;
                     }
 
-                    const lines = Object.entries(settings).map(
-                        ([forumId, targetId], index) =>
-                            `${index + 1}. フォーラム: <#${forumId}> → 通知先: <#${targetId}>`,
-                    );
+                    const lines = [];
+
+                    for (const forumId of forumIds) {
+                        const targetIds = await kv.sMembers(forumTargetsKey(interaction.guildId, forumId));
+
+                        if (!targetIds || targetIds.length === 0) {
+                            continue;
+                        }
+
+                        lines.push(`フォーラム: <#${forumId}>`);
+                        for (const targetId of targetIds) {
+                            lines.push(`　・通知先: <#${targetId}>`);
+                        }
+                    }
+
+                    if (lines.length === 0) {
+                        await interaction.reply({
+                            content: 'このサーバーにはまだフォーラム通知設定がありません。',
+                        });
+                        return;
+                    }
 
                     const chunks = splitLinesToMessages('現在のフォーラム通知設定一覧:\n', lines);
 
@@ -275,17 +300,21 @@ async function main() {
                         return;
                     }
 
-                    const deleted = await kv.hDel(guildMapKey(interaction.guildId), forum.id);
+                    const key = forumTargetsKey(interaction.guildId, forum.id);
+                    const targetIds = await kv.sMembers(key);
 
-                    if (!deleted) {
+                    if (!targetIds || targetIds.length === 0) {
                         await interaction.reply({
                             content: `そのフォーラムの設定は見つかりませんでした: <#${forum.id}>`,
                         });
                         return;
                     }
 
+                    await kv.del(key);
+                    await kv.sRem(forumIndexKey(interaction.guildId), forum.id);
+
                     await interaction.reply({
-                        content: `フォーラム通知設定を削除しました: <#${forum.id}>`,
+                        content: `フォーラム <#${forum.id}> に紐づく通知先をすべて削除しました。`,
                     });
                     return;
                 }
@@ -506,9 +535,8 @@ async function main() {
                 }
 
                 // -------------------------
-                // /role filter
-                // -------------------------
                 // /role filter list
+                // -------------------------
                 if (group === 'filter' && sub === 'list') {
                     const hasRole = interaction.options.getRole('has', true);
                     const notRole = interaction.options.getRole('not', true);
@@ -553,7 +581,10 @@ async function main() {
 
                     return;
                 }
+
+                // -------------------------
                 // /role filter mention
+                // -------------------------
                 if (group === 'filter' && sub === 'mention') {
                     const hasRole = interaction.options.getRole('has', true);
                     const notRole = interaction.options.getRole('not', true);
@@ -626,8 +657,8 @@ async function main() {
         try {
             if (!thread.parent || thread.parent.type !== ChannelType.GuildForum) return;
 
-            const targetId = await kv.hGet(guildMapKey(thread.guildId), thread.parentId);
-            if (!targetId) return;
+            const targetIds = await kv.sMembers(forumTargetsKey(thread.guildId, thread.parentId));
+            if (!targetIds || targetIds.length === 0) return;
 
             const ownerMention = thread.ownerId ? `<@${thread.ownerId}>` : '不明';
             const threadLink =
@@ -639,10 +670,12 @@ async function main() {
                 `スレ主: ${ownerMention}\n` +
                 `リンク: ${threadLink}`;
 
-            const result = await sendToTarget(client, targetId, message);
+            for (const targetId of targetIds) {
+                const result = await sendToTarget(client, targetId, message);
 
-            if (!result.ok) {
-                console.warn(`通知送信失敗: ${result.reason}, targetId=${targetId}`);
+                if (!result.ok) {
+                    console.warn(`通知送信失敗: ${result.reason}, targetId=${targetId}`);
+                }
             }
         } catch (error) {
             console.error('threadCreate でエラー:', error);
