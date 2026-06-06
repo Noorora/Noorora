@@ -161,6 +161,8 @@ const DEFAULT_FORUM_MESSAGE_TEMPLATE =
 
 function renderForumMessage(template, data) {
     return template
+        .replaceAll('\\n', '\n')
+        .replaceAll('<br>', '\n')
         .replaceAll('{forum}', data.forumMention)
         .replaceAll('{forumName}', data.forumName)
         .replaceAll('{thread}', data.threadName)
@@ -408,12 +410,22 @@ async function main() {
                 if (sub === 'placeholders') {
                     await interaction.reply({
                         content:
-                            'カスタムメッセージで使えるプレースホルダ一覧:\n' +
+                            '## カスタムメッセージで使えるプレースホルダ一覧\n' +
                             '・`{forum}` → フォーラムメンション\n' +
                             '・`{forumName}` → フォーラム名\n' +
                             '・`{thread}` → スレッド名\n' +
                             '・`{author}` → スレ主メンション\n' +
-                            '・`{link}` → スレッドURL',
+                            '・`{link}` → スレッドURL\n' +
+                            '\n' +
+                            '## 改行の書き方\n' +
+                            '改行したい場合は `\\n` を使ってください。\n' +
+                            '\n' +
+                            '## 例\n' +
+                            '```txt\n' +
+                            '{forum} に新しいスレッドが作成されました！\\n' +
+                            'スレ主: {author}\\n' +
+                            'リンク: {link}\n' +
+                            '```',
                         ephemeral: true,
                     });
                     return;
