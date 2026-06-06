@@ -90,8 +90,20 @@ const commands = [
                         .setDescription('設定を削除したいフォーラム')
                         .addChannelTypes(ChannelType.GuildForum)
                         .setRequired(true),
+                )
+                .addStringOption((option) =>
+                    option
+                        .setName('target_id')
+                        .setDescription('削除したい通知先のチャンネルIDまたはスレッドID（省略すると全部削除）')
+                        .setRequired(false),
                 ),
+    )
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('placeholders')
+                .setDescription('カスタムメッセージで使えるプレースホルダ一覧を表示します'),
         )
+
         .toJSON(),
 
     // =========================================================

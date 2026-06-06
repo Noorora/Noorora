@@ -343,6 +343,7 @@ async function main() {
                 // /forum unset
                 if (sub === 'unset') {
                     const forum = interaction.options.getChannel('forum', true);
+                    const targetId = interaction.options.getString('target_id', false)?.trim();
 
                     if (forum.type !== ChannelType.GuildForum) {
                         await interaction.reply({
@@ -363,12 +364,57 @@ async function main() {
                         return;
                     }
 
+                    // target_id が指定されている → 1件だけ削除
+                    if (targetId) {
+                        const removed = await kv.sRem(targetKey, targetId);
+
+                        if (!removed) {
+                            await interaction.reply({
+                                content:
+                                    `フォーラム <#${forum.id}> に、通知先 <#${targetId}> の設定は見つかりませんでした。`,
+                            });
+                            return;
+                        }
+
+                        // その通知先に対応するカスタム文面も消す
+                        await kv.hDel(messageKey, targetId);
+
+                        // 残り通知先が0件なら、indexからも外してキー削除
+                        const remainingTargets = await kv.sMembers(targetKey);
+                        if (!remainingTargets || remainingTargets.length === 0) {
+                            await kv.del(targetKey);
+                            await kv.del(messageKey);
+                            await kv.sRem(forumIndexKey(interaction.guildId), forum.id);
+                        }
+
+                        await interaction.reply({
+                            content:
+                                `フォーラム <#${forum.id}> から通知先 <#${targetId}> を削除しました。`,
+                        });
+                        return;
+                    }
+
+                    // target_id が指定されていない → 全部削除
                     await kv.del(targetKey);
                     await kv.del(messageKey);
                     await kv.sRem(forumIndexKey(interaction.guildId), forum.id);
 
                     await interaction.reply({
                         content: `フォーラム <#${forum.id}> に紐づく通知先をすべて削除しました。`,
+                    });
+                    return;
+                }
+                // /forum placeholders
+                if (sub === 'placeholders') {
+                    await interaction.reply({
+                        content:
+                            'カスタムメッセージで使えるプレースホルダ一覧:\n' +
+                            '・`{forum}` → フォーラムメンション\n' +
+                            '・`{forumName}` → フォーラム名\n' +
+                            '・`{thread}` → スレッド名\n' +
+                            '・`{author}` → スレ主メンション\n' +
+                            '・`{link}` → スレッドURL',
+                        ephemeral: true,
                     });
                     return;
                 }
