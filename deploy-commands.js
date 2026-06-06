@@ -20,42 +20,42 @@ const commands = [
     .setName('forum')
     .setDescription('フォーラム通知設定を管理します')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('channel')
-        .setDescription('通知先をチャンネルまたは既存スレッドに設定します')
-        .addChannelOption((option) =>
-          option
-            .setName('forum')
-            .setDescription('監視したいフォーラム（単体登録用）')
-            .addChannelTypes(ChannelType.GuildForum)
-            .setRequired(false),
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('channel')
+                .setDescription('通知先をチャンネルまたは既存スレッドに設定します')
+                .addChannelOption((option) =>
+                    option
+                        .setName('target_channel')
+                        .setDescription('通知先のチャンネルまたは既存スレッド')
+                        .addChannelTypes(
+                            ChannelType.GuildText,
+                            ChannelType.PublicThread,
+                            ChannelType.PrivateThread,
+                            ChannelType.AnnouncementThread
+                        )
+                        .setRequired(true),
+                )
+                .addChannelOption((option) =>
+                    option
+                        .setName('forum')
+                        .setDescription('監視したいフォーラム（単体登録用）')
+                        .addChannelTypes(ChannelType.GuildForum)
+                        .setRequired(false),
+                )
+                .addStringOption((option) =>
+                    option
+                        .setName('forum_ids')
+                        .setDescription('監視したいフォーラムIDをカンマ区切りで指定（一括登録用）')
+                        .setRequired(false),
+                )
+                .addStringOption((option) =>
+                    option
+                        .setName('message')
+                        .setDescription('通知メッセージのテンプレート（省略時はデフォルト）')
+                        .setRequired(false),
+                ),
         )
-        .addStringOption((option) =>
-          option
-            .setName('forum_ids')
-            .setDescription('監視したいフォーラムIDをカンマ区切りで指定（一括登録用）')
-            .setRequired(false),
-        )
-        .addChannelOption((option) =>
-          option
-            .setName('target_channel')
-            .setDescription('通知先のチャンネルまたは既存スレッド')
-            .addChannelTypes(
-              ChannelType.GuildText,
-              ChannelType.PublicThread,
-              ChannelType.PrivateThread,
-              ChannelType.AnnouncementThread
-            )
-            .setRequired(true),
-        )
-        .addStringOption((option) =>
-          option
-            .setName('message')
-            .setDescription('通知メッセージのテンプレート（省略時はデフォルト）')
-            .setRequired(false),
-        ),
-    )
     .addSubcommand((subcommand) =>
       subcommand
         .setName('placeholders')
