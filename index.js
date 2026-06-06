@@ -8,6 +8,7 @@ const {
 const { createClient } = require('redis');
 const express = require('express');
 
+// ===== 設定ここから =====
 if (process.env.RUN_ON_RENDER !== 'true') {
   console.log('ローカル実行は禁止されています。終了します。');
   process.exit(0);
@@ -25,12 +26,14 @@ if (!REDIS_URL) {
   console.error('REDIS_URL が設定されていません');
   process.exit(1);
 }
+// ===== 設定ここまで =====
 
 const kv = createClient({ url: REDIS_URL });
 kv.on('error', (error) => {
   console.error('Key Value 接続エラー:', error);
 });
 
+// ===== Redis キー =====
 function forumTargetsKey(guildId, forumId) {
   return `forum-targets:${guildId}:${forumId}`;
 }
@@ -43,18 +46,17 @@ function forumMessageMapKey(guildId, forumId) {
   return `forum-message-map:${guildId}:${forumId}`;
 }
 
+// ===== 長文分割用 =====
 function splitLinesToMessages(header, lines, maxLength = 1900) {
   const chunks = [];
   let current = header;
 
   for (const line of lines) {
-    if ((current + line + '
-').length > maxLength) {
+    if ((current + line + '\n').length > maxLength) {
       chunks.push(current.trimEnd());
       current = '';
     }
-    current += line + '
-';
+    current += line + '\n';
   }
 
   if (current.trim()) {
@@ -83,6 +85,7 @@ function splitBySpaceToMessages(header, items, maxLength = 1800) {
   return chunks;
 }
 
+// ===== 転送先へ送信 =====
 async function sendToTarget(client, targetId, message) {
   const target = await client.channels.fetch(targetId).catch(() => null);
   if (!target) return { ok: false, reason: 'target_not_found' };
@@ -110,6 +113,7 @@ async function sendToTarget(client, targetId, message) {
   }
 }
 
+// ===== 指定チャンネルで一度でも発言したユーザーIDを集める =====
 async function collectSpeakerIdsFromChannel(channel) {
   const speakerIds = new Set();
   let before;
@@ -140,6 +144,7 @@ async function collectSpeakerIdsFromChannel(channel) {
   return { speakerIds, fetchedCount };
 }
 
+// ===== フォーラム通知テンプレート =====
 const DEFAULT_FORUM_MESSAGE_TEMPLATE =
   '{forum} に、新しいスレッドが作成されました！\n' +
   'スレ主: {author}\n' +
@@ -219,9 +224,13 @@ async function main() {
     }
 
     try {
+      // =========================================================
+      // /forum 系
+      // =========================================================
       if (interaction.commandName === 'forum') {
         const sub = interaction.options.getSubcommand();
 
+        // /forum channel
         if (sub === 'channel') {
           const forum = interaction.options.getChannel('forum', false);
           const forumIdsRaw = interaction.options.getString('forum_ids', false);
@@ -297,6 +306,7 @@ async function main() {
           return;
         }
 
+        // /forum placeholders
         if (sub === 'placeholders') {
           await interaction.reply({
             content:
@@ -321,6 +331,7 @@ async function main() {
           return;
         }
 
+        // /forum show
         if (sub === 'show') {
           const forumIds = await kv.sMembers(forumIndexKey(interaction.guildId));
           if (!forumIds || forumIds.length === 0) {
@@ -350,6 +361,7 @@ async function main() {
           return;
         }
 
+        // /forum unset
         if (sub === 'unset') {
           const forum = interaction.options.getChannel('forum', false);
           const targetChannel = interaction.options.getChannel('target_channel', false);
@@ -381,6 +393,7 @@ async function main() {
             return;
           }
 
+          // forum + target_channel → 1件だけ削除
           if (forum && targetChannel) {
             const targetKey = forumTargetsKey(guildId, forum.id);
             const messageKey = forumMessageMapKey(guildId, forum.id);
@@ -400,6 +413,7 @@ async function main() {
             return;
           }
 
+          // forum だけ → そのフォーラムの通知先を全部削除
           if (forum && !targetChannel) {
             const targetKey = forumTargetsKey(guildId, forum.id);
             const messageKey = forumMessageMapKey(guildId, forum.id);
@@ -415,6 +429,7 @@ async function main() {
             return;
           }
 
+          // target_channel だけ → その通知先に紐づく設定を全部削除
           if (!forum && targetChannel) {
             let removedCount = 0;
             const removedLines = [];
@@ -448,10 +463,14 @@ async function main() {
         }
       }
 
+      // =========================================================
+      // /role 系
+      // =========================================================
       if (interaction.commandName === 'role') {
         const group = interaction.options.getSubcommandGroup();
         const sub = interaction.options.getSubcommand();
 
+        // /role missing list
         if (group === 'missing' && sub === 'list') {
           const targetRole = interaction.options.getRole('role', true);
           await interaction.guild.members.fetch();
@@ -469,6 +488,7 @@ async function main() {
           return;
         }
 
+        // /role missing mention
         if (group === 'missing' && sub === 'mention') {
           const targetRole = interaction.options.getRole('role', true);
           await interaction.guild.members.fetch();
@@ -492,6 +512,7 @@ async function main() {
           return;
         }
 
+        // /role channelnever list
         if (group === 'channelnever' && sub === 'list') {
           const targetRole = interaction.options.getRole('role', true);
           const channel = interaction.options.getChannel('channel', true);
@@ -516,6 +537,7 @@ async function main() {
           return;
         }
 
+        // /role channelnever mention
         if (group === 'channelnever' && sub === 'mention') {
           const targetRole = interaction.options.getRole('role', true);
           const channel = interaction.options.getChannel('channel', true);
@@ -545,6 +567,7 @@ async function main() {
           return;
         }
 
+        // /role filter list
         if (group === 'filter' && sub === 'list') {
           const hasRole = interaction.options.getRole('has', true);
           const notRole = interaction.options.getRole('not', true);
@@ -563,6 +586,7 @@ async function main() {
           return;
         }
 
+        // /role filter mention
         if (group === 'filter' && sub === 'mention') {
           const hasRole = interaction.options.getRole('has', true);
           const notRole = interaction.options.getRole('not', true);
@@ -604,13 +628,11 @@ async function main() {
       if (!thread.parent || thread.parent.type !== ChannelType.GuildForum) return;
       const targetIds = await kv.sMembers(forumTargetsKey(thread.guildId, thread.parentId));
       if (!targetIds || targetIds.length === 0) return;
-
       const ownerMention = thread.ownerId ? `<@${thread.ownerId}>` : '不明';
       const threadLink = thread.url ?? `https://discord.com/channels/${thread.guildId}/${thread.id}`;
       const forumMention = `<#${thread.parentId}>`;
       const forumName = thread.parent.name ?? 'フォーラム';
       const threadName = thread.name ?? '無題';
-
       for (const targetId of targetIds) {
         const customTemplate = await kv.hGet(forumMessageMapKey(thread.guildId, thread.parentId), targetId);
         const template = customTemplate || DEFAULT_FORUM_MESSAGE_TEMPLATE;
