@@ -236,7 +236,11 @@ async function main() {
                         content:
                             `フォーラム通知先を追加しました。\n` +
                             `フォーラム: <#${forum.id}>\n` +
-                            `通知先チャンネル: <#${logChannel.id}>`,
+                            `通知先チャンネル: <#${logChannel.id}>\n` +
+                            `カスタムメッセージ: ${messageTemplate ? 'あり' : 'なし'}` +
+                            (messageTemplate
+                                ? `\n設定メッセージ:\n\`\`\`txt\n${messageTemplate}\n\`\`\``
+                                : ''),
                     });
                     return;
                 }
@@ -287,7 +291,11 @@ async function main() {
                         content:
                             `フォーラム通知先を追加しました。\n` +
                             `フォーラム: <#${forum.id}>\n` +
-                            `通知先スレッド: <#${targetThread.id}>`,
+                            `通知先チャンネル: <#${logChannel.id}>\n` +
+                            `カスタムメッセージ: ${messageTemplate ? 'あり' : 'なし'}` +
+                            (messageTemplate
+                                ? `\n設定メッセージ:\n\`\`\`txt\n${messageTemplate}\n\`\`\``
+                                : ''),
                     });
                     return;
                 }
