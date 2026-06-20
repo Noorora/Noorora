@@ -139,6 +139,41 @@ const commands = [
                         .setDescription('対象ユーザー')
                         .setRequired(true),
                 ),
+    )
+        .addSubcommandGroup((group) =>
+            group
+                .setName('allowbot')
+                .setDescription('自動リアクション対象として許可する Bot を管理します')
+
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('add')
+                        .setDescription('自動リアクション対象として Bot を許可します')
+                        .addUserOption((option) =>
+                            option
+                                .setName('user')
+                                .setDescription('許可したい Bot アカウント')
+                                .setRequired(true),
+                        ),
+                )
+
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('show')
+                        .setDescription('許可されている Bot 一覧を表示します'),
+                )
+
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('remove')
+                        .setDescription('自動リアクション対象から Bot を外します')
+                        .addUserOption((option) =>
+                            option
+                                .setName('user')
+                                .setDescription('外したい Bot アカウント')
+                                .setRequired(true),
+                        ),
+                ),
         )
         .toJSON(),
 

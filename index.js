@@ -50,6 +50,9 @@ function forumMessageMapKey(guildId, forumId) {
 function reactionRulesKey(guildId) {
     return `reaction-rules:${guildId}`;
 }
+function reactionAllowedBotsKey(guildId) {
+    return `reaction-allowed-bots:${guildId}`;
+}
 
 function reactionRuleField(channelId, userId) {
     return `${channelId}:${userId}`;
@@ -492,6 +495,7 @@ async function main() {
             // /reaction 系
             // =========================================================
             if (interaction.commandName === 'reaction') {
+                const group = interaction.options.getSubcommandGroup(false);
                 const sub = interaction.options.getSubcommand();
 
                 if (sub === 'set') {
@@ -574,6 +578,72 @@ async function main() {
 
                     await interaction.reply({
                         content: `チャンネル <#${channel.id}> / ユーザー <@${user.id}> の自動リアクション設定を削除しました。`,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                if (group === 'allowbot' && sub === 'add') {
+                    const user = interaction.options.getUser('user', true);
+
+                    if (!user.bot) {
+                        await interaction.reply({
+                            content: 'bot アカウントを指定してください。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    await kv.sAdd(reactionAllowedBotsKey(interaction.guildId), user.id);
+
+                    await interaction.reply({
+                        content: `自動リアクション対象として Bot <@${user.id}> を許可しました。`,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+                if (group === 'allowbot' && sub === 'show') {
+                    const botIds = await kv.sMembers(reactionAllowedBotsKey(interaction.guildId));
+
+                    if (!botIds || botIds.length === 0) {
+                        await interaction.reply({
+                            content: 'このサーバーには、許可された Bot 一覧がまだありません。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const lines = botIds.map((id, index) => `${index + 1}. <@${id}> (${id})`);
+                    const chunks = splitLinesToMessages('自動リアクション対象として許可されている Bot 一覧:\n', lines);
+
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+                    return;
+                }
+                if (group === 'allowbot' && sub === 'remove') {
+                    const user = interaction.options.getUser('user', true);
+
+                    const removed = await kv.sRem(reactionAllowedBotsKey(interaction.guildId), user.id);
+
+                    if (!removed) {
+                        await interaction.reply({
+                            content: `Bot <@${user.id}> は許可一覧にありませんでした。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    await interaction.reply({
+                        content: `自動リアクション対象から Bot <@${user.id}> を削除しました。`,
                         ephemeral: true,
                     });
                     return;
@@ -740,7 +810,19 @@ async function main() {
     client.on(Events.MessageCreate, async (message) => {
         try {
             if (!message.guild) return;
-            if (message.author.bot) return;
+
+            // 自分自身のBotには反応しない
+            if (message.author.id === client.user.id) return;
+
+            // Bot投稿は原則無視。ただし許可済みBotだけ通す
+            if (message.author.bot) {
+                const isAllowedBot = await kv.sIsMember(
+                    reactionAllowedBotsKey(message.guildId),
+                    message.author.id
+                );
+
+                if (!isAllowedBot) return;
+            }
 
             const emoji = await kv.hGet(
                 reactionRulesKey(message.guildId),
