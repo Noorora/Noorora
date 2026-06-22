@@ -792,6 +792,53 @@ async function main() {
                     return;
                 }
             }
+            // =========================================================
+            // /hasrole 系
+            // =========================================================
+            if (interaction.commandName === 'hasrole') {
+                const sub = interaction.options.getSubcommand();
+
+                if (sub === 'list') {
+                    const targetRole = interaction.options.getRole('role', true);
+
+                    await interaction.guild.members.fetch();
+
+                    const membersWithRole = interaction.guild.members.cache.filter(
+                        (member) => !member.user.bot && member.roles.cache.has(targetRole.id)
+                    );
+
+                    if (membersWithRole.size === 0) {
+                        await interaction.reply({
+                            content: `ロール <@&${targetRole.id}> を持っているメンバーはいません。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const lines = membersWithRole.map(
+                        (member) => `・${member.user.tag} (<@${member.id}>)`
+                    );
+
+                    const chunks = splitLinesToMessages(
+                        `ロール <@&${targetRole.id}> を持っているメンバー一覧:\n`,
+                        lines
+                    );
+
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+
+                    return;
+                }
+            }
         } catch (error) {
             console.error('interactionCreate でエラー:', error);
             if (interaction.deferred) {

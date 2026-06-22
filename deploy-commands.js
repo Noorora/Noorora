@@ -289,6 +289,21 @@ const commands = [
                 ),
         )
         .toJSON(),
+    new SlashCommandBuilder()
+        .setName('hasrole')
+        .setDescription('指定したロールを持っているメンバーを表示します')
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('list')
+                .setDescription('指定したロールを持っているメンバー一覧を表示します')
+                .addRoleOption((option) =>
+                    option
+                        .setName('role')
+                        .setDescription('持っているメンバーを表示したいロール')
+                        .setRequired(true),
+                ),
+        )
+        .toJSON(),
 ];
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
