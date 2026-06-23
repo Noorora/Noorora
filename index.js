@@ -160,7 +160,7 @@ async function collectSpeakerIdsFromChannel(channel) {
 const DEFAULT_FORUM_MESSAGE_TEMPLATE =
     '{forum} に、新しいスレッドが作成されました！\\n' +
     'スレ主: {author}\\n' +
-    'リンク: {link}';
+    'リンク: {thread_link}';
 
 function renderForumMessage(template, data) {
     return template
@@ -170,6 +170,7 @@ function renderForumMessage(template, data) {
         .replaceAll('{thread}', data.threadName)
         .replaceAll('{author}', data.authorMention)
         .replaceAll('{link}', data.threadLink);
+        .replaceAll('{thread_link}', `[${data.threadName}](${data.threadLink})`);
 }
 
 function normalizeForumIdsInput(raw) {
@@ -343,6 +344,7 @@ async function main() {
                             '・`{thread}` → スレッド名\n' +
                             '・`{author}` → スレ主メンション\n' +
                             '・`{link}` → スレッドURL\n' +
+                            '・`{thread_link}` → スレッド名付きリンク\n' +
                             '\n' +
                             '## 改行の書き方\n' +
                             '改行したい場合は `\\n` を使ってください。\n' +
