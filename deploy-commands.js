@@ -1,4 +1,3 @@
-
 const {
     REST,
     Routes,
@@ -99,7 +98,7 @@ const commands = [
                 .setDescription('自動リアクション設定を追加または更新します')
                 .addChannelOption((option) =>
                     option
-                        .setName('channel')
+                        .setName('target_channel')
                         .setDescription('対象チャンネルまたはスレッド')
                         .addChannelTypes(...textOrThreadTypes)
                         .setRequired(true),
@@ -128,7 +127,7 @@ const commands = [
                 .setDescription('自動リアクション設定を削除します')
                 .addChannelOption((option) =>
                     option
-                        .setName('channel')
+                        .setName('target_channel')
                         .setDescription('対象チャンネルまたはスレッド')
                         .addChannelTypes(...textOrThreadTypes)
                         .setRequired(true),
@@ -139,12 +138,11 @@ const commands = [
                         .setDescription('対象ユーザー')
                         .setRequired(true),
                 ),
-    )
+        )
         .addSubcommandGroup((group) =>
             group
                 .setName('allowbot')
                 .setDescription('自動リアクション対象として許可する Bot を管理します')
-
                 .addSubcommand((subcommand) =>
                     subcommand
                         .setName('add')
@@ -156,13 +154,11 @@ const commands = [
                                 .setRequired(true),
                         ),
                 )
-
                 .addSubcommand((subcommand) =>
                     subcommand
                         .setName('show')
                         .setDescription('許可されている Bot 一覧を表示します'),
                 )
-
                 .addSubcommand((subcommand) =>
                     subcommand
                         .setName('remove')
@@ -224,7 +220,7 @@ const commands = [
                         )
                         .addChannelOption((option) =>
                             option
-                                .setName('channel')
+                                .setName('source_channel')
                                 .setDescription('確認したい通常テキストチャンネル')
                                 .addChannelTypes(ChannelType.GuildText)
                                 .setRequired(true),
@@ -242,7 +238,7 @@ const commands = [
                         )
                         .addChannelOption((option) =>
                             option
-                                .setName('channel')
+                                .setName('source_channel')
                                 .setDescription('確認したい通常テキストチャンネル')
                                 .addChannelTypes(ChannelType.GuildText)
                                 .setRequired(true),
@@ -289,15 +285,15 @@ const commands = [
                 ),
         )
         .toJSON(),
+
     new SlashCommandBuilder()
         .setName('rolemention')
         .setDescription('ロールメンション転載設定を管理します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('set')
-                .setDescription('ロールメンションの転載先スレッドを設定します')
+                .setDescription('ロールメンションの転載先を設定します')
                 .addRoleOption((option) =>
                     option
                         .setName('role')
@@ -306,24 +302,17 @@ const commands = [
                 )
                 .addChannelOption((option) =>
                     option
-                        .setName('target_thread')
-                        .setDescription('転載先のスレッド')
-                        .addChannelTypes(
-                            ChannelType.GuildText,
-                            ChannelType.PublicThread,
-                            ChannelType.PrivateThread,
-                            ChannelType.AnnouncementThread
-                        )
+                        .setName('target_channel')
+                        .setDescription('転載先のチャンネルまたはスレッド')
+                        .addChannelTypes(...textOrThreadTypes)
                         .setRequired(true),
                 ),
         )
-
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('show')
                 .setDescription('現在のロールメンション転載設定一覧を表示します'),
         )
-
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('unset')
@@ -336,6 +325,7 @@ const commands = [
                 ),
         )
         .toJSON(),
+
     new SlashCommandBuilder()
         .setName('hasrole')
         .setDescription('指定したロールを持っているメンバーを表示します')
@@ -354,6 +344,7 @@ const commands = [
 ];
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
+
 (async () => {
     try {
         console.log('グローバルコマンドとして登録中...');

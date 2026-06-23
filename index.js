@@ -1,4 +1,3 @@
-
 const {
     Client,
     GatewayIntentBits,
@@ -14,15 +13,12 @@ if (process.env.RUN_ON_RENDER !== 'true') {
     console.log('ローカル実行は禁止されています。終了します。');
     process.exit(0);
 }
-
 const TOKEN = process.env.TOKEN;
 const REDIS_URL = process.env.REDIS_URL;
-
 if (!TOKEN) {
     console.error('TOKEN が設定されていません');
     process.exit(1);
 }
-
 if (!REDIS_URL) {
     console.error('REDIS_URL が設定されていません');
     process.exit(1);
@@ -38,22 +34,18 @@ kv.on('error', (error) => {
 function forumTargetsKey(guildId, forumId) {
     return `forum-targets:${guildId}:${forumId}`;
 }
-
 function forumIndexKey(guildId) {
     return `forum-index:${guildId}`;
 }
-
 function forumMessageMapKey(guildId, forumId) {
     return `forum-message-map:${guildId}:${forumId}`;
 }
-
 function reactionRulesKey(guildId) {
     return `reaction-rules:${guildId}`;
 }
 function reactionAllowedBotsKey(guildId) {
     return `reaction-allowed-bots:${guildId}`;
 }
-
 function reactionRuleField(channelId, userId) {
     return `${channelId}:${userId}`;
 }
@@ -65,7 +57,6 @@ function roleMentionTargetsKey(guildId) {
 function splitLinesToMessages(header, lines, maxLength = 1900) {
     const chunks = [];
     let current = header;
-
     for (const line of lines) {
         if ((current + line + '\n').length > maxLength) {
             chunks.push(current.trimEnd());
@@ -73,18 +64,15 @@ function splitLinesToMessages(header, lines, maxLength = 1900) {
         }
         current += line + '\n';
     }
-
     if (current.trim()) {
         chunks.push(current.trimEnd());
     }
-
     return chunks;
 }
 
 function splitBySpaceToMessages(header, items, maxLength = 1800) {
     const chunks = [];
     let current = header;
-
     for (const item of items) {
         if ((current + item + ' ').length > maxLength) {
             chunks.push(current.trimEnd());
@@ -92,11 +80,9 @@ function splitBySpaceToMessages(header, items, maxLength = 1800) {
         }
         current += `${item} `;
     }
-
     if (current.trim()) {
         chunks.push(current.trimEnd());
     }
-
     return chunks;
 }
 
@@ -104,7 +90,6 @@ function splitBySpaceToMessages(header, items, maxLength = 1800) {
 async function sendToTarget(client, targetId, message) {
     const target = await client.channels.fetch(targetId).catch(() => null);
     if (!target) return { ok: false, reason: 'target_not_found' };
-
     if (typeof target.send !== 'function') {
         return { ok: false, reason: 'target_not_sendable' };
     }
@@ -148,11 +133,9 @@ async function collectSpeakerIdsFromChannel(channel) {
         }
 
         fetchedCount += batch.size;
-
         const lastMessage = batch.last();
         if (!lastMessage) break;
         before = lastMessage.id;
-
         if (batch.size < 100) break;
     }
 
@@ -167,7 +150,7 @@ const DEFAULT_FORUM_MESSAGE_TEMPLATE =
 
 function renderForumMessage(template, data) {
     return template
-        .replaceAll('\\n', '\n')
+        .replaceAll('\\\\n', '\n')
         .replaceAll('{forum}', data.forumMention)
         .replaceAll('{forumName}', data.forumName)
         .replaceAll('{thread}', data.threadName)
@@ -192,10 +175,8 @@ async function resolveForumIds(client, guildId, singleForum, forumIdsRaw) {
     }
 
     const ids = normalizeForumIdsInput(forumIdsRaw || '');
-
     for (const id of ids) {
         const channel = await client.channels.fetch(id).catch(() => null);
-
         if (!channel) {
             result.invalid.push({ input: id, reason: '見つかりませんでした' });
             continue;
@@ -208,7 +189,6 @@ async function resolveForumIds(client, guildId, singleForum, forumIdsRaw) {
             result.invalid.push({ input: id, reason: 'フォーラムではありません' });
             continue;
         }
-
         result.valid.push(channel.id);
     }
 
@@ -277,6 +257,7 @@ async function main() {
                         ChannelType.PrivateThread,
                         ChannelType.AnnouncementThread,
                     ];
+
                     if (!allowedTargetTypes.includes(targetChannel.type)) {
                         await interaction.reply({
                             content: 'target_channel にはテキストチャンネルまたは既存スレッドを指定してください。',
@@ -285,11 +266,12 @@ async function main() {
                     }
 
                     const resolved = await resolveForumIds(client, interaction.guildId, forum, forumIdsRaw);
+
                     if (resolved.valid.length === 0) {
                         const failLines = resolved.invalid.map((item) => `・${item.input} → ${item.reason}`);
                         const chunks = splitLinesToMessages(
                             'フォーラム通知先を追加できませんでした。\n',
-                            failLines.length > 0 ? failLines : ['・有効なフォーラムがありませんでした']
+                            failLines.length > 0 ? failLines : ['・有効なフォーラムがありませんでした'],
                         );
                         await interaction.reply({ content: chunks[0] });
                         for (let i = 1; i < chunks.length; i++) {
@@ -300,9 +282,11 @@ async function main() {
 
                     const successLines = [];
                     const failLines = [];
+
                     for (const forumId of resolved.valid) {
                         await kv.sAdd(forumTargetsKey(interaction.guildId, forumId), targetChannel.id);
                         await kv.sAdd(forumIndexKey(interaction.guildId), forumId);
+
                         if (messageTemplate) {
                             await kv.hSet(
                                 forumMessageMapKey(interaction.guildId, forumId),
@@ -310,13 +294,15 @@ async function main() {
                                 messageTemplate,
                             );
                         }
+
                         successLines.push(`・<#${forumId}> → <#${targetChannel.id}>`);
                     }
+
                     for (const item of resolved.invalid) {
                         failLines.push(`・${item.input} → ${item.reason}`);
                     }
 
-                    const previewMessage = messageTemplate ? messageTemplate.replaceAll('\\n', '\n') : null;
+                    const previewMessage = messageTemplate ? messageTemplate.replaceAll('\\\\n', '\n') : null;
                     const lines = [
                         `通知先: <#${targetChannel.id}>`,
                         `カスタムメッセージ: ${messageTemplate ? 'あり' : 'なし'}`,
@@ -325,11 +311,14 @@ async function main() {
                         ...successLines,
                         ...(failLines.length ? ['', '失敗:', ...failLines] : []),
                     ];
+
                     const chunks = splitLinesToMessages('フォーラム通知先を一括追加しました。\n', lines);
                     let firstContent = chunks[0];
+
                     if (previewMessage) {
                         firstContent += `\n設定メッセージ:\n\`\`\`txt\n${previewMessage}\n\`\`\``;
                     }
+
                     await interaction.reply({ content: firstContent });
                     for (let i = 1; i < chunks.length; i++) {
                         await interaction.followUp({ content: chunks[i] });
@@ -348,13 +337,13 @@ async function main() {
                             '・`{link}` → スレッドURL\n' +
                             '\n' +
                             '## 改行の書き方\n' +
-                            '改行したい場合は `\\n` を使ってください。\n' +
+                            '改行したい場合は `\\\\n` を使ってください。\n' +
                             '\n' +
                             '## 例\n' +
                             '```txt\n' +
-                            '{forum} に新しいスレッドが作成されました！\\n' +
-                            'スレ主: {author}\\n' +
-                            'リンク: {link}\n' +
+                            '{forum} に新しいスレッドが作成されました！\\\\n' +
+                            'スレ主: {author}\\\\n' +
+                            'リンク: [{thread}]({link})\n' +
                             '```',
                         ephemeral: true,
                     });
@@ -372,6 +361,7 @@ async function main() {
                     for (const forumId of forumIds) {
                         const targetIds = await kv.sMembers(forumTargetsKey(interaction.guildId, forumId));
                         if (!targetIds || targetIds.length === 0) continue;
+
                         lines.push(`フォーラム: <#${forumId}>`);
                         for (const targetId of targetIds) {
                             const customMessage = await kv.hGet(
@@ -381,10 +371,12 @@ async function main() {
                             lines.push(`　・通知先: <#${targetId}> / カスタム文面: ${customMessage ? 'あり' : 'なし'}`);
                         }
                     }
+
                     if (lines.length === 0) {
                         await interaction.reply({ content: 'このサーバーにはまだフォーラム通知設定がありません。' });
                         return;
                     }
+
                     const chunks = splitLinesToMessages('現在のフォーラム通知設定一覧:\n', lines);
                     await interaction.reply({ content: chunks[0] });
                     for (let i = 1; i < chunks.length; i++) {
@@ -402,6 +394,7 @@ async function main() {
                         await interaction.reply({ content: 'forum か target_channel のどちらかは指定してください。' });
                         return;
                     }
+
                     if (forum && forum.type !== ChannelType.GuildForum) {
                         await interaction.reply({ content: 'forum にはフォーラムチャンネルを指定してください。' });
                         return;
@@ -413,6 +406,7 @@ async function main() {
                         ChannelType.PrivateThread,
                         ChannelType.AnnouncementThread,
                     ];
+
                     if (targetChannel && !allowedTargetTypes.includes(targetChannel.type)) {
                         await interaction.reply({ content: 'target_channel にはテキストチャンネルまたはスレッドを指定してください。' });
                         return;
@@ -428,17 +422,21 @@ async function main() {
                         const targetKey = forumTargetsKey(guildId, forum.id);
                         const messageKey = forumMessageMapKey(guildId, forum.id);
                         const removed = await kv.sRem(targetKey, targetChannel.id);
+
                         if (!removed) {
                             await interaction.reply({ content: `フォーラム <#${forum.id}> に、通知先 <#${targetChannel.id}> の設定は見つかりませんでした。` });
                             return;
                         }
+
                         await kv.hDel(messageKey, targetChannel.id);
+
                         const remainingTargets = await kv.sMembers(targetKey);
                         if (!remainingTargets || remainingTargets.length === 0) {
                             await kv.del(targetKey);
                             await kv.del(messageKey);
                             await kv.sRem(forumIndexKey(guildId), forum.id);
                         }
+
                         await interaction.reply({ content: `フォーラム <#${forum.id}> から通知先 <#${targetChannel.id}> を削除しました。` });
                         return;
                     }
@@ -447,13 +445,16 @@ async function main() {
                         const targetKey = forumTargetsKey(guildId, forum.id);
                         const messageKey = forumMessageMapKey(guildId, forum.id);
                         const targetIds = await kv.sMembers(targetKey);
+
                         if (!targetIds || targetIds.length === 0) {
                             await interaction.reply({ content: `そのフォーラムの設定は見つかりませんでした: <#${forum.id}>` });
                             return;
                         }
+
                         await kv.del(targetKey);
                         await kv.del(messageKey);
                         await kv.sRem(forumIndexKey(guildId), forum.id);
+
                         await interaction.reply({ content: `フォーラム <#${forum.id}> に紐づく通知先をすべて削除しました。` });
                         return;
                     }
@@ -461,14 +462,17 @@ async function main() {
                     if (!forum && targetChannel) {
                         let removedCount = 0;
                         const removedLines = [];
+
                         for (const forumId of forumIds) {
                             const targetKey = forumTargetsKey(guildId, forumId);
                             const messageKey = forumMessageMapKey(guildId, forumId);
                             const removed = await kv.sRem(targetKey, targetChannel.id);
+
                             if (removed) {
                                 removedCount += 1;
                                 removedLines.push(`・フォーラム <#${forumId}> から通知先 <#${targetChannel.id}> を削除`);
                                 await kv.hDel(messageKey, targetChannel.id);
+
                                 const remainingTargets = await kv.sMembers(targetKey);
                                 if (!remainingTargets || remainingTargets.length === 0) {
                                     await kv.del(targetKey);
@@ -477,10 +481,12 @@ async function main() {
                                 }
                             }
                         }
+
                         if (removedCount === 0) {
                             await interaction.reply({ content: `通知先 <#${targetChannel.id}> に紐づく設定は見つかりませんでした。` });
                             return;
                         }
+
                         const chunks = splitLinesToMessages(
                             `通知先 <#${targetChannel.id}> に紐づく設定を ${removedCount} 件削除しました。\n`,
                             removedLines,
@@ -502,30 +508,30 @@ async function main() {
 
                 if (sub === 'set') {
                     const role = interaction.options.getRole('role', true);
-                    const targetThread = interaction.options.getChannel('target_thread', true);
+                    const targetChannel = interaction.options.getChannel('target_channel', true);
 
-                    const allowedThreadTypes = [
+                    const allowedTargetTypes = [
                         ChannelType.GuildText,
                         ChannelType.PublicThread,
                         ChannelType.PrivateThread,
                         ChannelType.AnnouncementThread,
                     ];
 
-                    if (!allowedThreadTypes.includes(targetThread.type)) {
+                    if (!allowedTargetTypes.includes(targetChannel.type)) {
                         await interaction.reply({
-                            content: 'target_thread にはスレッドを指定してください。',
+                            content: 'target_channel にはチャンネルまたはスレッドを指定してください。',
                             ephemeral: true,
                         });
                         return;
                     }
 
-                    await kv.hSet(roleMentionTargetsKey(interaction.guildId), role.id, targetThread.id);
+                    await kv.hSet(roleMentionTargetsKey(interaction.guildId), role.id, targetChannel.id);
 
                     await interaction.reply({
                         content:
                             `ロールメンション転載設定を登録しました。\n` +
                             `ロール: <@&${role.id}>\n` +
-                            `転載先スレッド: <#${targetThread.id}>`,
+                            `転載先: <#${targetChannel.id}>`,
                         ephemeral: true,
                     });
                     return;
@@ -533,7 +539,6 @@ async function main() {
 
                 if (sub === 'show') {
                     const settings = await kv.hGetAll(roleMentionTargetsKey(interaction.guildId));
-
                     if (!settings || Object.keys(settings).length === 0) {
                         await interaction.reply({
                             content: 'このサーバーにはまだロールメンション転載設定がありません。',
@@ -544,14 +549,10 @@ async function main() {
 
                     const lines = Object.entries(settings).map(
                         ([roleId, targetId], index) =>
-                            `${index + 1}. ロール: <@&${roleId}> → 転載先: <#${targetId}>`
+                            `${index + 1}. ロール: <@&${roleId}> → 転載先: <#${targetId}>`,
                     );
 
-                    const chunks = splitLinesToMessages(
-                        '現在のロールメンション転載設定一覧:\n',
-                        lines
-                    );
-
+                    const chunks = splitLinesToMessages('現在のロールメンション転載設定一覧:\n', lines);
                     await interaction.reply({
                         content: chunks[0],
                         ephemeral: true,
@@ -568,7 +569,6 @@ async function main() {
 
                 if (sub === 'unset') {
                     const role = interaction.options.getRole('role', true);
-
                     const removed = await kv.hDel(roleMentionTargetsKey(interaction.guildId), role.id);
 
                     if (!removed) {
@@ -595,7 +595,7 @@ async function main() {
                 const sub = interaction.options.getSubcommand();
 
                 if (sub === 'set') {
-                    const channel = interaction.options.getChannel('channel', true);
+                    const targetChannel = interaction.options.getChannel('target_channel', true);
                     const user = interaction.options.getUser('user', true);
                     const emoji = interaction.options.getString('emoji', true).trim();
 
@@ -605,9 +605,10 @@ async function main() {
                         ChannelType.PrivateThread,
                         ChannelType.AnnouncementThread,
                     ];
-                    if (!allowedTargetTypes.includes(channel.type)) {
+
+                    if (!allowedTargetTypes.includes(targetChannel.type)) {
                         await interaction.reply({
-                            content: 'channel にはテキストチャンネルまたはスレッドを指定してください。',
+                            content: 'target_channel にはテキストチャンネルまたはスレッドを指定してください。',
                             ephemeral: true,
                         });
                         return;
@@ -615,14 +616,14 @@ async function main() {
 
                     await kv.hSet(
                         reactionRulesKey(interaction.guildId),
-                        reactionRuleField(channel.id, user.id),
+                        reactionRuleField(targetChannel.id, user.id),
                         emoji,
                     );
 
                     await interaction.reply({
                         content:
                             `自動リアクション設定を登録しました。\n` +
-                            `チャンネル: <#${channel.id}>\n` +
+                            `対象チャンネル: <#${targetChannel.id}>\n` +
                             `ユーザー: <@${user.id}>\n` +
                             `絵文字: ${emoji}`,
                         ephemeral: true,
@@ -644,7 +645,7 @@ async function main() {
 
                     const lines = rules.map(
                         (rule, index) =>
-                            `${index + 1}. チャンネル: <#${rule.channelId}> / ユーザー: <@${rule.userId}> / 絵文字: ${rule.emoji}`
+                            `${index + 1}. 対象チャンネル: <#${rule.channelId}> / ユーザー: <@${rule.userId}> / 絵文字: ${rule.emoji}`,
                     );
 
                     const chunks = splitLinesToMessages('現在の自動リアクション設定一覧:\n', lines);
@@ -656,24 +657,24 @@ async function main() {
                 }
 
                 if (sub === 'unset') {
-                    const channel = interaction.options.getChannel('channel', true);
+                    const targetChannel = interaction.options.getChannel('target_channel', true);
                     const user = interaction.options.getUser('user', true);
 
                     const removed = await kv.hDel(
                         reactionRulesKey(interaction.guildId),
-                        reactionRuleField(channel.id, user.id),
+                        reactionRuleField(targetChannel.id, user.id),
                     );
 
                     if (!removed) {
                         await interaction.reply({
-                            content: `チャンネル <#${channel.id}> / ユーザー <@${user.id}> の自動リアクション設定は見つかりませんでした。`,
+                            content: `対象チャンネル <#${targetChannel.id}> / ユーザー <@${user.id}> の自動リアクション設定は見つかりませんでした。`,
                             ephemeral: true,
                         });
                         return;
                     }
 
                     await interaction.reply({
-                        content: `チャンネル <#${channel.id}> / ユーザー <@${user.id}> の自動リアクション設定を削除しました。`,
+                        content: `対象チャンネル <#${targetChannel.id}> / ユーザー <@${user.id}> の自動リアクション設定を削除しました。`,
                         ephemeral: true,
                     });
                     return;
@@ -681,7 +682,6 @@ async function main() {
 
                 if (group === 'allowbot' && sub === 'add') {
                     const user = interaction.options.getUser('user', true);
-
                     if (!user.bot) {
                         await interaction.reply({
                             content: 'bot アカウントを指定してください。',
@@ -691,16 +691,15 @@ async function main() {
                     }
 
                     await kv.sAdd(reactionAllowedBotsKey(interaction.guildId), user.id);
-
                     await interaction.reply({
                         content: `自動リアクション対象として Bot <@${user.id}> を許可しました。`,
                         ephemeral: true,
                     });
                     return;
                 }
+
                 if (group === 'allowbot' && sub === 'show') {
                     const botIds = await kv.sMembers(reactionAllowedBotsKey(interaction.guildId));
-
                     if (!botIds || botIds.length === 0) {
                         await interaction.reply({
                             content: 'このサーバーには、許可された Bot 一覧がまだありません。',
@@ -725,9 +724,9 @@ async function main() {
                     }
                     return;
                 }
+
                 if (group === 'allowbot' && sub === 'remove') {
                     const user = interaction.options.getUser('user', true);
-
                     const removed = await kv.sRem(reactionAllowedBotsKey(interaction.guildId), user.id);
 
                     if (!removed) {
@@ -757,12 +756,15 @@ async function main() {
                     const targetRole = interaction.options.getRole('role', true);
                     await interaction.guild.members.fetch();
                     const membersWithoutRole = interaction.guild.members.cache.filter((member) => !member.user.bot && !member.roles.cache.has(targetRole.id));
+
                     if (membersWithoutRole.size === 0) {
                         await interaction.reply({ content: `ロール <@&${targetRole.id}> を持っていないメンバーはいません。`, ephemeral: true });
                         return;
                     }
+
                     const lines = membersWithoutRole.map((member) => `・${member.user.tag} (<@${member.id}>)`);
                     const chunks = splitLinesToMessages(`ロール <@&${targetRole.id}> を持っていないメンバー一覧:\n`, lines);
+
                     await interaction.reply({ content: chunks[0], ephemeral: true });
                     for (let i = 1; i < chunks.length; i++) {
                         await interaction.followUp({ content: chunks[i], ephemeral: true });
@@ -774,12 +776,15 @@ async function main() {
                     const targetRole = interaction.options.getRole('role', true);
                     await interaction.guild.members.fetch();
                     const membersWithoutRole = interaction.guild.members.cache.filter((member) => !member.user.bot && !member.roles.cache.has(targetRole.id));
+
                     if (membersWithoutRole.size === 0) {
                         await interaction.reply({ content: `ロール <@&${targetRole.id}> を持っていないメンバーはいません。`, ephemeral: true });
                         return;
                     }
+
                     const rawMentions = membersWithoutRole.map((member) => `<@${member.id}>`);
                     const chunks = splitBySpaceToMessages('', rawMentions);
+
                     await interaction.reply({
                         content:
                             `ロール <@&${targetRole.id}> を持っていないメンバーのコピペ用メンションです。\n` +
@@ -787,6 +792,7 @@ async function main() {
                             '```txt\n' + chunks[0] + '\n```',
                         ephemeral: true,
                     });
+
                     for (let i = 1; i < chunks.length; i++) {
                         await interaction.followUp({ content: '```txt\n' + chunks[i] + '\n```', ephemeral: true });
                     }
@@ -795,21 +801,34 @@ async function main() {
 
                 if (group === 'channelnever' && sub === 'list') {
                     const targetRole = interaction.options.getRole('role', true);
-                    const channel = interaction.options.getChannel('channel', true);
-                    if (channel.type !== ChannelType.GuildText) {
-                        await interaction.reply({ content: 'channel には通常のテキストチャンネルを指定してください。', ephemeral: true });
+                    const sourceChannel = interaction.options.getChannel('source_channel', true);
+
+                    if (sourceChannel.type !== ChannelType.GuildText) {
+                        await interaction.reply({ content: 'source_channel には通常のテキストチャンネルを指定してください。', ephemeral: true });
                         return;
                     }
+
                     await interaction.deferReply({ ephemeral: true });
-                    const { speakerIds, fetchedCount } = await collectSpeakerIdsFromChannel(channel);
+                    const { speakerIds, fetchedCount } = await collectSpeakerIdsFromChannel(sourceChannel);
                     await interaction.guild.members.fetch();
-                    const filteredMembers = interaction.guild.members.cache.filter((member) => !member.user.bot && !member.roles.cache.has(targetRole.id) && !speakerIds.has(member.id));
+
+                    const filteredMembers = interaction.guild.members.cache.filter(
+                        (member) => !member.user.bot && !member.roles.cache.has(targetRole.id) && !speakerIds.has(member.id),
+                    );
+
                     if (filteredMembers.size === 0) {
-                        await interaction.editReply({ content: `ロール <@&${targetRole.id}> を持っておらず、チャンネル <#${channel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバーはいません。` });
+                        await interaction.editReply({
+                            content: `ロール <@&${targetRole.id}> を持っておらず、チャンネル <#${sourceChannel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバーはいません。`,
+                        });
                         return;
                     }
+
                     const lines = filteredMembers.map((member) => `・${member.user.tag} (<@${member.id}>)`);
-                    const chunks = splitLinesToMessages(`ロール <@&${targetRole.id}> を持っておらず、チャンネル <#${channel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバー一覧:\n`, lines);
+                    const chunks = splitLinesToMessages(
+                        `ロール <@&${targetRole.id}> を持っておらず、チャンネル <#${sourceChannel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバー一覧:\n`,
+                        lines,
+                    );
+
                     await interaction.editReply({ content: chunks[0] });
                     for (let i = 1; i < chunks.length; i++) {
                         await interaction.followUp({ content: chunks[i], ephemeral: true });
@@ -819,27 +838,38 @@ async function main() {
 
                 if (group === 'channelnever' && sub === 'mention') {
                     const targetRole = interaction.options.getRole('role', true);
-                    const channel = interaction.options.getChannel('channel', true);
-                    if (channel.type !== ChannelType.GuildText) {
-                        await interaction.reply({ content: 'channel には通常のテキストチャンネルを指定してください。', ephemeral: true });
+                    const sourceChannel = interaction.options.getChannel('source_channel', true);
+
+                    if (sourceChannel.type !== ChannelType.GuildText) {
+                        await interaction.reply({ content: 'source_channel には通常のテキストチャンネルを指定してください。', ephemeral: true });
                         return;
                     }
+
                     await interaction.deferReply({ ephemeral: true });
-                    const { speakerIds, fetchedCount } = await collectSpeakerIdsFromChannel(channel);
+                    const { speakerIds, fetchedCount } = await collectSpeakerIdsFromChannel(sourceChannel);
                     await interaction.guild.members.fetch();
-                    const filteredMembers = interaction.guild.members.cache.filter((member) => !member.user.bot && !member.roles.cache.has(targetRole.id) && !speakerIds.has(member.id));
+
+                    const filteredMembers = interaction.guild.members.cache.filter(
+                        (member) => !member.user.bot && !member.roles.cache.has(targetRole.id) && !speakerIds.has(member.id),
+                    );
+
                     if (filteredMembers.size === 0) {
-                        await interaction.editReply({ content: `ロール <@&${targetRole.id}> を持っておらず、チャンネル <#${channel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバーはいません。` });
+                        await interaction.editReply({
+                            content: `ロール <@&${targetRole.id}> を持っておらず、チャンネル <#${sourceChannel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバーはいません。`,
+                        });
                         return;
                     }
+
                     const rawMentions = filteredMembers.map((member) => `<@${member.id}>`);
                     const chunks = splitBySpaceToMessages('', rawMentions);
+
                     await interaction.editReply({
                         content:
-                            `ロール <@&${targetRole.id}> を持っておらず、チャンネル <#${channel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバーのコピペ用メンションです。\n` +
+                            `ロール <@&${targetRole.id}> を持っておらず、チャンネル <#${sourceChannel.id}> の取得できた履歴（${fetchedCount}件）で一度も発言していないメンバーのコピペ用メンションです。\n` +
                             `下のコードブロックをコピーして使ってください。\n\n` +
                             '```txt\n' + chunks[0] + '\n```',
                     });
+
                     for (let i = 1; i < chunks.length; i++) {
                         await interaction.followUp({ content: '```txt\n' + chunks[i] + '\n```', ephemeral: true });
                     }
@@ -850,13 +880,22 @@ async function main() {
                     const hasRole = interaction.options.getRole('has', true);
                     const notRole = interaction.options.getRole('not', true);
                     await interaction.guild.members.fetch();
-                    const filteredMembers = interaction.guild.members.cache.filter((member) => !member.user.bot && member.roles.cache.has(hasRole.id) && !member.roles.cache.has(notRole.id));
+
+                    const filteredMembers = interaction.guild.members.cache.filter(
+                        (member) => !member.user.bot && member.roles.cache.has(hasRole.id) && !member.roles.cache.has(notRole.id),
+                    );
+
                     if (filteredMembers.size === 0) {
                         await interaction.reply({ content: `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバーはいません。`, ephemeral: true });
                         return;
                     }
+
                     const lines = filteredMembers.map((member) => `・${member.user.tag} (<@${member.id}>)`);
-                    const chunks = splitLinesToMessages(`ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバー一覧:\n`, lines);
+                    const chunks = splitLinesToMessages(
+                        `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバー一覧:\n`,
+                        lines,
+                    );
+
                     await interaction.reply({ content: chunks[0], ephemeral: true });
                     for (let i = 1; i < chunks.length; i++) {
                         await interaction.followUp({ content: chunks[i], ephemeral: true });
@@ -868,13 +907,19 @@ async function main() {
                     const hasRole = interaction.options.getRole('has', true);
                     const notRole = interaction.options.getRole('not', true);
                     await interaction.guild.members.fetch();
-                    const filteredMembers = interaction.guild.members.cache.filter((member) => !member.user.bot && member.roles.cache.has(hasRole.id) && !member.roles.cache.has(notRole.id));
+
+                    const filteredMembers = interaction.guild.members.cache.filter(
+                        (member) => !member.user.bot && member.roles.cache.has(hasRole.id) && !member.roles.cache.has(notRole.id),
+                    );
+
                     if (filteredMembers.size === 0) {
                         await interaction.reply({ content: `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバーはいません。`, ephemeral: true });
                         return;
                     }
+
                     const rawMentions = filteredMembers.map((member) => `<@${member.id}>`);
                     const chunks = splitBySpaceToMessages('', rawMentions);
+
                     await interaction.reply({
                         content:
                             `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバーのコピペ用メンションです。\n` +
@@ -882,12 +927,14 @@ async function main() {
                             '```txt\n' + chunks[0] + '\n```',
                         ephemeral: true,
                     });
+
                     for (let i = 1; i < chunks.length; i++) {
                         await interaction.followUp({ content: '```txt\n' + chunks[i] + '\n```', ephemeral: true });
                     }
                     return;
                 }
             }
+
             // =========================================================
             // /hasrole 系
             // =========================================================
@@ -896,11 +943,10 @@ async function main() {
 
                 if (sub === 'list') {
                     const targetRole = interaction.options.getRole('role', true);
-
                     await interaction.guild.members.fetch();
 
                     const membersWithRole = interaction.guild.members.cache.filter(
-                        (member) => !member.user.bot && member.roles.cache.has(targetRole.id)
+                        (member) => !member.user.bot && member.roles.cache.has(targetRole.id),
                     );
 
                     if (membersWithRole.size === 0) {
@@ -911,13 +957,10 @@ async function main() {
                         return;
                     }
 
-                    const lines = membersWithRole.map(
-                        (member) => `・${member.user.tag} (<@${member.id}>)`
-                    );
-
+                    const lines = membersWithRole.map((member) => `・${member.user.tag} (<@${member.id}>)`);
                     const chunks = splitLinesToMessages(
                         `ロール <@&${targetRole.id}> を持っているメンバー一覧:\n`,
-                        lines
+                        lines,
                     );
 
                     await interaction.reply({
@@ -931,7 +974,6 @@ async function main() {
                             ephemeral: true,
                         });
                     }
-
                     return;
                 }
             }
@@ -961,7 +1003,7 @@ async function main() {
             if (message.author.bot) {
                 const isAllowedBot = await kv.sIsMember(
                     reactionAllowedBotsKey(message.guildId),
-                    message.author.id
+                    message.author.id,
                 );
 
                 if (!isAllowedBot) return;
@@ -973,7 +1015,6 @@ async function main() {
             );
 
             if (!emoji) return;
-
             await message.react(emoji);
         } catch (error) {
             console.error('messageCreate で自動リアクション付与失敗:', error);
@@ -986,13 +1027,16 @@ async function main() {
     client.on(Events.ThreadCreate, async (thread) => {
         try {
             if (!thread.parent || thread.parent.type !== ChannelType.GuildForum) return;
+
             const targetIds = await kv.sMembers(forumTargetsKey(thread.guildId, thread.parentId));
             if (!targetIds || targetIds.length === 0) return;
+
             const ownerMention = thread.ownerId ? `<@${thread.ownerId}>` : '不明';
             const threadLink = thread.url ?? `https://discord.com/channels/${thread.guildId}/${thread.id}`;
             const forumMention = `<#${thread.parentId}>`;
             const forumName = thread.parent.name ?? 'フォーラム';
             const threadName = thread.name ?? '無題';
+
             for (const targetId of targetIds) {
                 const customTemplate = await kv.hGet(forumMessageMapKey(thread.guildId, thread.parentId), targetId);
                 const template = customTemplate || DEFAULT_FORUM_MESSAGE_TEMPLATE;
@@ -1003,6 +1047,7 @@ async function main() {
                     authorMention: ownerMention,
                     threadLink,
                 });
+
                 const result = await sendToTarget(client, targetId, message);
                 if (!result.ok) {
                     console.warn(`通知送信失敗: ${result.reason}, targetId=${targetId}`);
@@ -1025,7 +1070,6 @@ async function main() {
             const settings = await kv.hGetAll(roleMentionTargetsKey(message.guildId));
             if (!settings || Object.keys(settings).length === 0) return;
 
-            // 同じ転載先に複数ロールが紐づいている場合でも1回にまとめる
             const targets = new Map();
 
             for (const role of message.mentions.roles.values()) {
@@ -1071,13 +1115,16 @@ main().catch((error) => {
 
 const app = express();
 const PORT = Number(process.env.PORT || 10000);
+
 app.get('/', (req, res) => {
     res.send('Bot is running');
 });
+
 app.get('/health', (req, res) => {
     console.log(`[health] ${new Date().toISOString()} /health accessed`);
     res.status(200).send('ok');
 });
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`HTTP server listening on ${PORT}`);
 });
