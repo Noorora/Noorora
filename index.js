@@ -57,6 +57,9 @@ function reactionAllowedBotsKey(guildId) {
 function reactionRuleField(channelId, userId) {
     return `${channelId}:${userId}`;
 }
+function roleMentionTargetsKey(guildId) {
+    return `role-mention-targets:${guildId}`;
+}
 
 // ===== 長文分割用 =====
 function splitLinesToMessages(header, lines, maxLength = 1900) {
@@ -492,6 +495,98 @@ async function main() {
             }
 
             // =========================================================
+            // /rolemention 系
+            // =========================================================
+            if (interaction.commandName === 'rolemention') {
+                const sub = interaction.options.getSubcommand();
+
+                if (sub === 'set') {
+                    const role = interaction.options.getRole('role', true);
+                    const targetThread = interaction.options.getChannel('target_thread', true);
+
+                    const allowedThreadTypes = [
+                        ChannelType.PublicThread,
+                        ChannelType.PrivateThread,
+                        ChannelType.AnnouncementThread,
+                    ];
+
+                    if (!allowedThreadTypes.includes(targetThread.type)) {
+                        await interaction.reply({
+                            content: 'target_thread にはスレッドを指定してください。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    await kv.hSet(roleMentionTargetsKey(interaction.guildId), role.id, targetThread.id);
+
+                    await interaction.reply({
+                        content:
+                            `ロールメンション転載設定を登録しました。\n` +
+                            `ロール: <@&${role.id}>\n` +
+                            `転載先スレッド: <#${targetThread.id}>`,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                if (sub === 'show') {
+                    const settings = await kv.hGetAll(roleMentionTargetsKey(interaction.guildId));
+
+                    if (!settings || Object.keys(settings).length === 0) {
+                        await interaction.reply({
+                            content: 'このサーバーにはまだロールメンション転載設定がありません。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const lines = Object.entries(settings).map(
+                        ([roleId, targetId], index) =>
+                            `${index + 1}. ロール: <@&${roleId}> → 転載先: <#${targetId}>`
+                    );
+
+                    const chunks = splitLinesToMessages(
+                        '現在のロールメンション転載設定一覧:\n',
+                        lines
+                    );
+
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+                    return;
+                }
+
+                if (sub === 'unset') {
+                    const role = interaction.options.getRole('role', true);
+
+                    const removed = await kv.hDel(roleMentionTargetsKey(interaction.guildId), role.id);
+
+                    if (!removed) {
+                        await interaction.reply({
+                            content: `ロール <@&${role.id}> の転載設定は見つかりませんでした。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    await interaction.reply({
+                        content: `ロール <@&${role.id}> の転載設定を削除しました。`,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+            }
+
+            // =========================================================
             // /reaction 系
             // =========================================================
             if (interaction.commandName === 'reaction') {
@@ -914,6 +1009,54 @@ async function main() {
             }
         } catch (error) {
             console.error('threadCreate でエラー:', error);
+        }
+    });
+
+    // =========================================================
+    // ロールメンションがあったメッセージのリンクを転載
+    // =========================================================
+    client.on(Events.MessageCreate, async (message) => {
+        try {
+            if (!message.guild) return;
+            if (message.author.bot) return;
+            if (!message.mentions.roles || message.mentions.roles.size === 0) return;
+
+            const settings = await kv.hGetAll(roleMentionTargetsKey(message.guildId));
+            if (!settings || Object.keys(settings).length === 0) return;
+
+            // 同じ転載先に複数ロールが紐づいている場合でも1回にまとめる
+            const targets = new Map();
+
+            for (const role of message.mentions.roles.values()) {
+                const targetId = settings[role.id];
+                if (!targetId) continue;
+
+                if (!targets.has(targetId)) {
+                    targets.set(targetId, []);
+                }
+                targets.get(targetId).push(role.id);
+            }
+
+            if (targets.size === 0) return;
+
+            for (const [targetId, roleIds] of targets.entries()) {
+                const roleMentions = roleIds.map((id) => `<@&${id}>`).join(' ');
+
+                const content =
+                    `ロールメンションがありました。\n` +
+                    `ロール: ${roleMentions}\n` +
+                    `送信者: <@${message.author.id}>\n` +
+                    `場所: <#${message.channelId}>\n` +
+                    `リンク: ${message.url}`;
+
+                const result = await sendToTarget(client, targetId, content);
+
+                if (!result.ok) {
+                    console.warn(`ロールメンション転載失敗: ${result.reason}, targetId=${targetId}`);
+                }
+            }
+        } catch (error) {
+            console.error('messageCreate でロールメンション転載失敗:', error);
         }
     });
 

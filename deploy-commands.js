@@ -290,6 +290,52 @@ const commands = [
         )
         .toJSON(),
     new SlashCommandBuilder()
+        .setName('rolemention')
+        .setDescription('ロールメンション転載設定を管理します')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('set')
+                .setDescription('ロールメンションの転載先スレッドを設定します')
+                .addRoleOption((option) =>
+                    option
+                        .setName('role')
+                        .setDescription('監視したいロール')
+                        .setRequired(true),
+                )
+                .addChannelOption((option) =>
+                    option
+                        .setName('target_thread')
+                        .setDescription('転載先のスレッド')
+                        .addChannelTypes(
+                            ChannelType.PublicThread,
+                            ChannelType.PrivateThread,
+                            ChannelType.AnnouncementThread
+                        )
+                        .setRequired(true),
+                ),
+        )
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('show')
+                .setDescription('現在のロールメンション転載設定一覧を表示します'),
+        )
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('unset')
+                .setDescription('ロールメンション転載設定を削除します')
+                .addRoleOption((option) =>
+                    option
+                        .setName('role')
+                        .setDescription('削除したいロール')
+                        .setRequired(true),
+                ),
+        )
+        .toJSON(),
+    new SlashCommandBuilder()
         .setName('hasrole')
         .setDescription('指定したロールを持っているメンバーを表示します')
         .addSubcommand((subcommand) =>
