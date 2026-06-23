@@ -214,6 +214,7 @@ async function main() {
             GatewayIntentBits.Guilds,
             GatewayIntentBits.GuildMembers,
             GatewayIntentBits.GuildMessages,
+            GatewayIntentBits.MessageContent,
         ],
     });
 
@@ -1100,7 +1101,7 @@ async function main() {
                     `送信者: <@${message.author.id}>\n` +
                     `場所: <#${message.channelId}>\n` +
                     `本文:\n` +
-                    `>>> ${messageBody}\n` +
+                    `> ${messageBody.replaceAll('\n', '\n> ')}\n` +
                     `リンク: ${message.url}`;
 
                 const result = await sendToTarget(client, targetId, content);
