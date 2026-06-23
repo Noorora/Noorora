@@ -309,6 +309,7 @@ const commands = [
                         .setName('target_thread')
                         .setDescription('転載先のスレッド')
                         .addChannelTypes(
+                            ChannelType.GuildText,
                             ChannelType.PublicThread,
                             ChannelType.PrivateThread,
                             ChannelType.AnnouncementThread

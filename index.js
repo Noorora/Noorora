@@ -505,6 +505,7 @@ async function main() {
                     const targetThread = interaction.options.getChannel('target_thread', true);
 
                     const allowedThreadTypes = [
+                        ChannelType.GuildText,
                         ChannelType.PublicThread,
                         ChannelType.PrivateThread,
                         ChannelType.AnnouncementThread,
