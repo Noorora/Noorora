@@ -150,7 +150,8 @@ const DEFAULT_FORUM_MESSAGE_TEMPLATE =
 
 function renderForumMessage(template, data) {
     return template
-        .replaceAll('\\\\n', '\n')
+        .replaceAll('\\r\\n', '\n')
+        .replaceAll('\\n', '\n')
         .replaceAll('{forum}', data.forumMention)
         .replaceAll('{forumName}', data.forumName)
         .replaceAll('{thread}', data.threadName)
