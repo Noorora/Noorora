@@ -1088,11 +1088,19 @@ async function main() {
             for (const [targetId, roleIds] of targets.entries()) {
                 const roleMentions = roleIds.map((id) => `<@&${id}>`).join(' ');
 
+                const rawMessageBody = message.content?.trim() || '（本文なし）';
+                const messageBody =
+                    rawMessageBody.length > 1500
+                        ? rawMessageBody.slice(0, 1500) + '\n...(省略)'
+                        : rawMessageBody;
+
                 const content =
                     `ロールメンションがありました。\n` +
                     `ロール: ${roleMentions}\n` +
                     `送信者: <@${message.author.id}>\n` +
                     `場所: <#${message.channelId}>\n` +
+                    `本文:\n` +
+                    `>>> ${messageBody}\n` +
                     `リンク: ${message.url}`;
 
                 const result = await sendToTarget(client, targetId, content);
