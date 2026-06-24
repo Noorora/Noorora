@@ -373,6 +373,81 @@ async function main() {
     });
 
     client.on(Events.InteractionCreate, async (interaction) => {
+        if (interaction.isButton()) {
+            try {
+                const [action, kind, token] = interaction.customId.split(':');
+                if (action !== 'cleanup_confirm' && action !== 'cleanup_cancel') return;
+
+                const pendingRaw = await kv.get(pendingCleanupKey(token));
+                if (!pendingRaw) {
+                    await interaction.reply({
+                        content: '確認情報の有効期限が切れたため、もう一度 show を実行してください。',
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                const pending = JSON.parse(pendingRaw);
+                if (pending.guildId !== interaction.guildId || pending.kind !== kind) {
+                    await interaction.reply({
+                        content: 'この確認情報は現在のサーバーでは使用できません。',
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                if (action === 'cleanup_cancel') {
+                    await kv.del(pendingCleanupKey(token));
+                    await interaction.update({
+                        content: '削除をキャンセルしました。',
+                        components: [],
+                    });
+                    return;
+                }
+
+                let removedLines = [];
+                if (kind === 'forum') {
+                    removedLines = await applyForumCleanup(interaction.guildId, pending.staleEntries || []);
+                } else if (kind === 'rolemention') {
+                    removedLines = await applyRoleMentionCleanup(interaction.guildId, pending.staleEntries || []);
+                }
+
+                await kv.del(pendingCleanupKey(token));
+
+                const summary =
+                    removedLines.length === 0
+                        ? '削除対象はありませんでした。'
+                        : `削除を完了しました。 ${removedLines.length} 件の設定を削除しました。`;
+
+                await interaction.update({
+                    content: summary,
+                    components: [],
+                });
+
+                if (removedLines.length > 0) {
+                    const chunks = splitLinesToMessages('削除した設定一覧:\n', removedLines);
+                    for (const chunk of chunks) {
+                        await interaction.followUp({ content: chunk, ephemeral: true });
+                    }
+                }
+                return;
+            } catch (error) {
+                console.error('cleanup button でエラー:', error);
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.followUp({
+                        content: '確認処理中にエラーが発生しました。',
+                        ephemeral: true,
+                    }).catch(() => null);
+                } else {
+                    await interaction.reply({
+                        content: '確認処理中にエラーが発生しました。',
+                        ephemeral: true,
+                    }).catch(() => null);
+                }
+                return;
+            }
+        }
+
         if (!interaction.isChatInputCommand()) return;
 
         if (!interaction.inGuild()) {
@@ -503,36 +578,68 @@ async function main() {
                 }
 
                 if (sub === 'show') {
-                    const forumIds = await kv.sMembers(forumIndexKey(interaction.guildId));
-                    if (!forumIds || forumIds.length === 0) {
+                    const { validLines, staleEntries } = await collectForumShowData(client, interaction.guildId);
+
+                    if (validLines.length === 0 && staleEntries.length === 0) {
                         await interaction.reply({ content: 'このサーバーにはまだフォーラム通知設定がありません。' });
                         return;
                     }
 
-                    const lines = [];
-                    for (const forumId of forumIds) {
-                        const targetIds = await kv.sMembers(forumTargetsKey(interaction.guildId, forumId));
-                        if (!targetIds || targetIds.length === 0) continue;
+                    if (staleEntries.length === 0) {
+                        const chunks = splitLinesToMessages('現在のフォーラム通知設定一覧:\n', validLines);
+                        await interaction.reply({ content: chunks[0] });
+                        for (let i = 1; i < chunks.length; i++) {
+                            await interaction.followUp({ content: chunks[i] });
+                        }
+                        return;
+                    }
 
-                        lines.push(`フォーラム: <#${forumId}>`);
-                        for (const targetId of targetIds) {
-                            const customMessage = await kv.hGet(
-                                forumMessageMapKey(interaction.guildId, forumId),
-                                targetId,
-                            );
-                            lines.push(`　・通知先: <#${targetId}> / カスタム文面: ${customMessage ? 'あり' : 'なし'}`);
+                    const staleLines = staleEntries.map((entry) =>
+                        entry.type === 'forum_missing'
+                            ? `・消失したフォーラム: <#${entry.forumId}>`
+                            : `・フォーラム <#${entry.forumId}> → 消失した通知先 <#${entry.targetId}>`
+                    );
+
+                    const token = crypto.randomUUID();
+                    await kv.setEx(
+                        pendingCleanupKey(token),
+                        900,
+                        JSON.stringify({
+                            kind: 'forum',
+                            guildId: interaction.guildId,
+                            staleEntries,
+                        }),
+                    );
+
+                    const summaryLines = [
+                        `有効な設定: ${validLines.length} 行`,
+                        `削除候補: ${staleEntries.length} 件`,
+                        '',
+                        '消えている転送先またはフォーラムが見つかりました。',
+                        '削除する場合は下のボタンを押してください。',
+                    ];
+
+                    const summaryChunks = splitLinesToMessages('現在のフォーラム通知設定一覧:\n', summaryLines);
+                    await interaction.reply({
+                        content: summaryChunks[0],
+                        components: buildCleanupButtons('forum', token),
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < summaryChunks.length; i++) {
+                        await interaction.followUp({ content: summaryChunks[i], ephemeral: true });
+                    }
+
+                    if (validLines.length > 0) {
+                        const validChunks = splitLinesToMessages('有効な設定一覧:\n', validLines);
+                        for (const chunk of validChunks) {
+                            await interaction.followUp({ content: chunk, ephemeral: true });
                         }
                     }
 
-                    if (lines.length === 0) {
-                        await interaction.reply({ content: 'このサーバーにはまだフォーラム通知設定がありません。' });
-                        return;
-                    }
-
-                    const chunks = splitLinesToMessages('現在のフォーラム通知設定一覧:\n', lines);
-                    await interaction.reply({ content: chunks[0] });
-                    for (let i = 1; i < chunks.length; i++) {
-                        await interaction.followUp({ content: chunks[i] });
+                    const staleChunks = splitLinesToMessages('削除候補一覧:\n', staleLines);
+                    for (const chunk of staleChunks) {
+                        await interaction.followUp({ content: chunk, ephemeral: true });
                     }
                     return;
                 }
@@ -730,8 +837,9 @@ async function main() {
                 }
 
                 if (sub === 'show') {
-                    const settings = await kv.hGetAll(roleMentionTargetsKey(interaction.guildId));
-                    if (!settings || Object.keys(settings).length === 0) {
+                    const { validLines, staleEntries } = await collectRoleMentionShowData(client, interaction.guildId);
+
+                    if (validLines.length === 0 && staleEntries.length === 0) {
                         await interaction.reply({
                             content: 'このサーバーにはまだロールメンション転載設定がありません。',
                             ephemeral: true,
@@ -739,23 +847,65 @@ async function main() {
                         return;
                     }
 
-                    const lines = [];
-                    for (const [roleId, targetId] of Object.entries(settings)) {
-                        const customMessage = await kv.hGet(roleMentionMessageMapKey(interaction.guildId), roleId);
-                        lines.push(`ロール: <@&${roleId}> → 転載先: <#${targetId}> / カスタム文面: ${customMessage ? 'あり' : 'なし'}`);
+                    if (staleEntries.length === 0) {
+                        const chunks = splitLinesToMessages('現在のロールメンション転載設定一覧:\n', validLines);
+                        await interaction.reply({
+                            content: chunks[0],
+                            ephemeral: true,
+                        });
+                        for (let i = 1; i < chunks.length; i++) {
+                            await interaction.followUp({
+                                content: chunks[i],
+                                ephemeral: true,
+                            });
+                        }
+                        return;
                     }
 
-                    const chunks = splitLinesToMessages('現在のロールメンション転載設定一覧:\n', lines);
+                    const staleLines = staleEntries.map(
+                        (entry) => `・ロール <@&${entry.roleId}> → 消失した転載先 <#${entry.targetId}>`,
+                    );
+
+                    const token = crypto.randomUUID();
+                    await kv.setEx(
+                        pendingCleanupKey(token),
+                        900,
+                        JSON.stringify({
+                            kind: 'rolemention',
+                            guildId: interaction.guildId,
+                            staleEntries,
+                        }),
+                    );
+
+                    const summaryLines = [
+                        `有効な設定: ${validLines.length} 行`,
+                        `削除候補: ${staleEntries.length} 件`,
+                        '',
+                        '消えている転載先が見つかりました。',
+                        '削除する場合は下のボタンを押してください。',
+                    ];
+
+                    const summaryChunks = splitLinesToMessages('現在のロールメンション転載設定一覧:\n', summaryLines);
                     await interaction.reply({
-                        content: chunks[0],
+                        content: summaryChunks[0],
+                        components: buildCleanupButtons('rolemention', token),
                         ephemeral: true,
                     });
 
-                    for (let i = 1; i < chunks.length; i++) {
-                        await interaction.followUp({
-                            content: chunks[i],
-                            ephemeral: true,
-                        });
+                    for (let i = 1; i < summaryChunks.length; i++) {
+                        await interaction.followUp({ content: summaryChunks[i], ephemeral: true });
+                    }
+
+                    if (validLines.length > 0) {
+                        const validChunks = splitLinesToMessages('有効な設定一覧:\n', validLines);
+                        for (const chunk of validChunks) {
+                            await interaction.followUp({ content: chunk, ephemeral: true });
+                        }
+                    }
+
+                    const staleChunks = splitLinesToMessages('削除候補一覧:\n', staleLines);
+                    for (const chunk of staleChunks) {
+                        await interaction.followUp({ content: chunk, ephemeral: true });
                     }
                     return;
                 }
