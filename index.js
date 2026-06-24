@@ -4,9 +4,13 @@ const {
     ChannelType,
     Events,
     PermissionFlagsBits,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
 } = require('discord.js');
 const { createClient } = require('redis');
 const express = require('express');
+const crypto = require('crypto');
 
 // ===== 設定ここから =====
 if (process.env.RUN_ON_RENDER !== 'true') {
@@ -51,6 +55,9 @@ function reactionRuleField(channelId, userId) {
 }
 function roleMentionTargetsKey(guildId) {
     return `role-mention-targets:${guildId}`;
+}
+function pendingCleanupKey(token) {
+    return `pending-cleanup:${token}`;
 }
 function roleMentionMessageMapKey(guildId) {
     return `role-mention-message-map:${guildId}`;
@@ -225,6 +232,128 @@ function parseReactionRules(hash) {
         const userId = field.slice(sep + 1);
         return { field, channelId, userId, emoji };
     });
+}
+
+function buildCleanupButtons(kind, token) {
+    return [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`cleanup_confirm:${kind}:${token}`)
+                .setLabel('削除する')
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId(`cleanup_cancel:${kind}:${token}`)
+                .setLabel('キャンセル')
+                .setStyle(ButtonStyle.Secondary),
+        ),
+    ];
+}
+
+async function collectForumShowData(client, guildId) {
+    const forumIds = await kv.sMembers(forumIndexKey(guildId));
+    const validLines = [];
+    const staleEntries = [];
+
+    for (const forumId of forumIds) {
+        const forumChannel = await client.channels.fetch(forumId).catch(() => null);
+        if (!forumChannel || forumChannel.type !== ChannelType.GuildForum || forumChannel.guildId !== guildId) {
+            staleEntries.push({ type: 'forum_missing', forumId });
+            continue;
+        }
+
+        const targetIds = await kv.sMembers(forumTargetsKey(guildId, forumId));
+        if (!targetIds || targetIds.length === 0) continue;
+
+        validLines.push(`フォーラム: <#${forumId}>`);
+        for (const targetId of targetIds) {
+            const targetChannel = await client.channels.fetch(targetId).catch(() => null);
+            if (!targetChannel || targetChannel.guildId !== guildId || typeof targetChannel.send !== 'function') {
+                staleEntries.push({ type: 'target_missing', forumId, targetId });
+                continue;
+            }
+
+            const customMessage = await kv.hGet(
+                forumMessageMapKey(guildId, forumId),
+                targetId,
+            );
+            validLines.push(`　・通知先: <#${targetId}> / カスタム文面: ${customMessage ? 'あり' : 'なし'}`);
+        }
+    }
+
+    return { validLines, staleEntries };
+}
+
+async function applyForumCleanup(guildId, staleEntries) {
+    const processed = new Set();
+    const removedLines = [];
+
+    for (const entry of staleEntries) {
+        const key = `${entry.type}:${entry.forumId}:${entry.targetId || ''}`;
+        if (processed.has(key)) continue;
+        processed.add(key);
+
+        if (entry.type === 'forum_missing') {
+            const targetKey = forumTargetsKey(guildId, entry.forumId);
+            const messageKey = forumMessageMapKey(guildId, entry.forumId);
+            await kv.del(targetKey);
+            await kv.del(messageKey);
+            await kv.sRem(forumIndexKey(guildId), entry.forumId);
+            removedLines.push(`・削除: 消失したフォーラム <#${entry.forumId}> に紐づく通知設定`);
+            continue;
+        }
+
+        if (entry.type === 'target_missing') {
+            const targetKey = forumTargetsKey(guildId, entry.forumId);
+            const messageKey = forumMessageMapKey(guildId, entry.forumId);
+            await kv.sRem(targetKey, entry.targetId);
+            await kv.hDel(messageKey, entry.targetId);
+
+            const remainingTargets = await kv.sMembers(targetKey);
+            if (!remainingTargets || remainingTargets.length === 0) {
+                await kv.del(targetKey);
+                await kv.del(messageKey);
+                await kv.sRem(forumIndexKey(guildId), entry.forumId);
+            }
+
+            removedLines.push(`・削除: フォーラム <#${entry.forumId}> → 消失した通知先 <#${entry.targetId}>`);
+        }
+    }
+
+    return removedLines;
+}
+
+async function collectRoleMentionShowData(client, guildId) {
+    const settings = await kv.hGetAll(roleMentionTargetsKey(guildId));
+    const validLines = [];
+    const staleEntries = [];
+
+    for (const [roleId, targetId] of Object.entries(settings)) {
+        const targetChannel = await client.channels.fetch(targetId).catch(() => null);
+        if (!targetChannel || targetChannel.guildId !== guildId || typeof targetChannel.send !== 'function') {
+            staleEntries.push({ roleId, targetId });
+            continue;
+        }
+
+        validLines.push(`ロール: <@&${roleId}> → 転載先: <#${targetId}>`);
+    }
+
+    return { validLines, staleEntries };
+}
+
+async function applyRoleMentionCleanup(guildId, staleEntries) {
+    const processed = new Set();
+    const removedLines = [];
+
+    for (const entry of staleEntries) {
+        const key = `${entry.roleId}:${entry.targetId}`;
+        if (processed.has(key)) continue;
+        processed.add(key);
+
+        await kv.hDel(roleMentionTargetsKey(guildId), entry.roleId);
+        removedLines.push(`・削除: ロール <@&${entry.roleId}> → 消失した転載先 <#${entry.targetId}>`);
+    }
+
+    return removedLines;
 }
 
 async function main() {
