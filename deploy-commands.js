@@ -306,7 +306,18 @@ const commands = [
                         .setDescription('転載先のチャンネルまたはスレッド')
                         .addChannelTypes(...textOrThreadTypes)
                         .setRequired(true),
+                )
+                .addStringOption((option) =>
+                    option
+                        .setName('message')
+                        .setDescription('転載メッセージのテンプレート（省略時はデフォルト）')
+                        .setRequired(false),
                 ),
+        )
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('placeholders')
+                .setDescription('ロールメンション転載で使えるプレースホルダ一覧を表示します'),
         )
         .addSubcommand((subcommand) =>
             subcommand

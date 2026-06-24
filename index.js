@@ -52,6 +52,9 @@ function reactionRuleField(channelId, userId) {
 function roleMentionTargetsKey(guildId) {
     return `role-mention-targets:${guildId}`;
 }
+function roleMentionMessageMapKey(guildId) {
+    return `role-mention-message-map:${guildId}`;
+}
 
 // ===== 長文分割用 =====
 function splitLinesToMessages(header, lines, maxLength = 1900) {
@@ -157,6 +160,24 @@ function renderForumMessage(template, data) {
         .replaceAll('{thread}', data.threadName)
         .replaceAll('{author}', data.authorMention)
         .replaceAll('{link}', data.threadLink);
+}
+
+// ===== ロールメンション転載テンプレート =====
+const DEFAULT_ROLE_MENTION_MESSAGE_TEMPLATE =
+    '送信主：{author}\\n' +
+    '{body_quote}\\n' +
+    '{link}';
+
+function renderRoleMentionMessage(template, data) {
+    return template
+        .replaceAll('\\r\\n', '\n')
+        .replaceAll('\\n', '\n')
+        .replaceAll('{author}', data.authorMention)
+        .replaceAll('{roles}', data.roleMentions)
+        .replaceAll('{channel}', data.channelMention)
+        .replaceAll('{link}', data.messageLink)
+        .replaceAll('{body}', data.body)
+        .replaceAll('{body_quote}', data.bodyQuote);
 }
 
 function normalizeForumIdsInput(raw) {
@@ -304,7 +325,7 @@ async function main() {
                         failLines.push(`・${item.input} → ${item.reason}`);
                     }
 
-                    const previewMessage = messageTemplate ? messageTemplate.replaceAll('\\\\n', '\n') : null;
+                    const previewMessage = messageTemplate ? messageTemplate.replaceAll('\\n', '\n') : null;
                     const lines = [
                         `通知先: <#${targetChannel.id}>`,
                         `カスタムメッセージ: ${messageTemplate ? 'あり' : 'なし'}`,
@@ -339,12 +360,12 @@ async function main() {
                             '・`{link}` → スレッドURL\n' +
                             '\n' +
                             '## 改行の書き方\n' +
-                            '改行したい場合は `\\\\n` を使ってください。\n' +
+                            '改行したい場合は `\\n` を使ってください。\n' +
                             '\n' +
                             '## 例\n' +
                             '```txt\n' +
-                            '{forum} に新しいスレッドが作成されました！\\\\n' +
-                            'スレ主: {author}\\\\n' +
+                            '{forum} に新しいスレッドが作成されました！\\n' +
+                            'スレ主: {author}\\n' +
                             'リンク: [{thread}]({link})\n' +
                             '```',
                         ephemeral: true,
@@ -511,6 +532,7 @@ async function main() {
                 if (sub === 'set') {
                     const role = interaction.options.getRole('role', true);
                     const targetChannel = interaction.options.getChannel('target_channel', true);
+                    const messageTemplate = interaction.options.getString('message', false);
 
                     const allowedTargetTypes = [
                         ChannelType.GuildText,
@@ -529,11 +551,50 @@ async function main() {
 
                     await kv.hSet(roleMentionTargetsKey(interaction.guildId), role.id, targetChannel.id);
 
+                    if (messageTemplate) {
+                        await kv.hSet(roleMentionMessageMapKey(interaction.guildId), role.id, messageTemplate);
+                    }
+
+                    const previewMessage = messageTemplate ? messageTemplate.replaceAll('\\n', '\n') : null;
+
+                    let content =
+                        `ロールメンション転載設定を登録しました。\n` +
+                        `ロール: <@&${role.id}>\n` +
+                        `転載先: <#${targetChannel.id}>\n` +
+                        `カスタムメッセージ: ${messageTemplate ? 'あり' : 'なし'}`;
+
+                    if (previewMessage) {
+                        content += `\n設定メッセージ:\n\`\`\`txt\n${previewMessage}\n\`\`\``;
+                    }
+
+                    await interaction.reply({
+                        content,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                if (sub === 'placeholders') {
                     await interaction.reply({
                         content:
-                            `ロールメンション転載設定を登録しました。\n` +
-                            `ロール: <@&${role.id}>\n` +
-                            `転載先: <#${targetChannel.id}>`,
+                            '## ロールメンション転載で使えるプレースホルダ一覧\n' +
+                            '・`{author}` → 送信者メンション\n' +
+                            '・`{roles}` → メンションされたロール一覧\n' +
+                            '・`{channel}` → 元チャンネルメンション\n' +
+                            '・`{link}` → 元メッセージリンク\n' +
+                            '・`{body}` → 本文そのまま\n' +
+                            '・`{body_quote}` → 引用形式の本文\n' +
+                            '\n' +
+                            '## 改行の書き方\n' +
+                            '改行したい場合は `\\n` を使ってください。\n' +
+                            '\n' +
+                            '## 例\n' +
+                            '```txt\n' +
+                            '送信主：{author}\\n' +
+                            '{body_quote}\\n' +
+                            '# {channel}\\n' +
+                            '{link}\n' +
+                            '```',
                         ephemeral: true,
                     });
                     return;
@@ -549,10 +610,11 @@ async function main() {
                         return;
                     }
 
-                    const lines = Object.entries(settings).map(
-                        ([roleId, targetId], index) =>
-                            `${index + 1}. ロール: <@&${roleId}> → 転載先: <#${targetId}>`,
-                    );
+                    const lines = [];
+                    for (const [roleId, targetId] of Object.entries(settings)) {
+                        const customMessage = await kv.hGet(roleMentionMessageMapKey(interaction.guildId), roleId);
+                        lines.push(`ロール: <@&${roleId}> → 転載先: <#${targetId}> / カスタム文面: ${customMessage ? 'あり' : 'なし'}`);
+                    }
 
                     const chunks = splitLinesToMessages('現在のロールメンション転載設定一覧:\n', lines);
                     await interaction.reply({
@@ -580,6 +642,8 @@ async function main() {
                         });
                         return;
                     }
+
+                    await kv.hDel(roleMentionMessageMapKey(interaction.guildId), role.id);
 
                     await interaction.reply({
                         content: `ロール <@&${role.id}> の転載設定を削除しました。`,
@@ -998,16 +1062,13 @@ async function main() {
         try {
             if (!message.guild) return;
 
-            // 自分自身のBotには反応しない
             if (message.author.id === client.user.id) return;
 
-            // Bot投稿は原則無視。ただし許可済みBotだけ通す
             if (message.author.bot) {
                 const isAllowedBot = await kv.sIsMember(
                     reactionAllowedBotsKey(message.guildId),
                     message.author.id,
                 );
-
                 if (!isAllowedBot) return;
             }
 
@@ -1042,7 +1103,8 @@ async function main() {
             for (const targetId of targetIds) {
                 const customTemplate = await kv.hGet(forumMessageMapKey(thread.guildId, thread.parentId), targetId);
                 const template = customTemplate || DEFAULT_FORUM_MESSAGE_TEMPLATE;
-                const message = renderForumMessage(template, {
+
+                const messageContent = renderForumMessage(template, {
                     forumMention,
                     forumName,
                     threadName,
@@ -1050,7 +1112,7 @@ async function main() {
                     threadLink,
                 });
 
-                const result = await sendToTarget(client, targetId, message);
+                const result = await sendToTarget(client, targetId, messageContent);
                 if (!result.ok) {
                     console.warn(`通知送信失敗: ${result.reason}, targetId=${targetId}`);
                 }
@@ -1086,23 +1148,37 @@ async function main() {
 
             if (targets.size === 0) return;
 
+            const rawMessageBody = message.content?.trim() || '（本文なし）';
+            const messageBody =
+                rawMessageBody.length > 1500
+                    ? rawMessageBody.slice(0, 1500) + '\n...(省略)'
+                    : rawMessageBody;
+
+            const bodyQuote = messageBody
+                .split('\n')
+                .map((line) => `> ${line}`)
+                .join('\n');
+
             for (const [targetId, roleIds] of targets.entries()) {
                 const roleMentions = roleIds.map((id) => `<@&${id}>`).join(' ');
+                const roleIdForTemplate = roleIds[0];
 
-                const rawMessageBody = message.content?.trim() || '（本文なし）';
+                const customTemplate = await kv.hGet(
+                    roleMentionMessageMapKey(message.guildId),
+                    roleIdForTemplate,
+                );
+                const template = customTemplate || DEFAULT_ROLE_MENTION_MESSAGE_TEMPLATE;
 
-                const formattedBody = rawMessageBody
-                    .split('\n')
-                    .map(line => `> ${line}`)
-                    .join('\n');
+                const messageContent = renderRoleMentionMessage(template, {
+                    authorMention: `<@${message.author.id}>`,
+                    roleMentions,
+                    channelMention: `<#${message.channelId}>`,
+                    messageLink: message.url,
+                    body: messageBody,
+                    bodyQuote,
+                });
 
-                const content =
-                    `<@${message.author.id}>\n` +
-                    `${formattedBody}\n` +
-                    `${message.url}`;
-
-                const result = await sendToTarget(client, targetId, content);
-
+                const result = await sendToTarget(client, targetId, messageContent);
                 if (!result.ok) {
                     console.warn(`ロールメンション転載失敗: ${result.reason}, targetId=${targetId}`);
                 }
