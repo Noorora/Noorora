@@ -115,7 +115,12 @@ async function sendToTarget(client, targetId, message) {
     }
 
     try {
-        await target.send(message);
+        await target.send({
+            content: message,
+            allowedMentions: {
+                parse: [],
+            },
+        });
         return { ok: true };
     } catch (error) {
         console.error('送信失敗:', error);
@@ -472,170 +477,169 @@ async function main() {
     });
 
     client.on(Events.InteractionCreate, async (interaction) => {
-        client.on(Events.InteractionCreate, async (interaction) => {
-            if (interaction.isButton()) {
-                try {
-                    const parts = interaction.customId.split(':');
-                    const action = parts[0];
-                    const kind = parts[1];
-                    const token = parts[2];
+        if (interaction.isButton()) {
+            try {
+                const parts = interaction.customId.split(':');
+                const action = parts[0];
+                const kind = parts[1];
+                const token = parts[2];
 
-                    if (!['cleanup_all', 'cleanup_pick', 'cleanup_back', 'cleanup_cancel', 'cleanup_one'].includes(action)) {
-                        return;
+                if (!['cleanup_all', 'cleanup_pick', 'cleanup_back', 'cleanup_cancel', 'cleanup_one'].includes(action)) {
+                    return;
+                }
+
+                const pendingRaw = await kv.get(pendingCleanupKey(token));
+                if (!pendingRaw) {
+                    await interaction.reply({
+                        content: '確認情報の有効期限が切れたため、もう一度 show を実行してください。',
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                const pending = JSON.parse(pendingRaw);
+                if (pending.guildId !== interaction.guildId || pending.kind !== kind) {
+                    await interaction.reply({
+                        content: 'この確認情報は現在のサーバーでは使用できません。',
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                const staleEntries = pending.staleEntries || [];
+                const staleLines = pending.staleLines || [];
+                const validLines = pending.validLines || [];
+
+                if (action === 'cleanup_cancel') {
+                    await kv.del(pendingCleanupKey(token));
+                    await interaction.update({
+                        content: '削除をキャンセルしました。',
+                        components: [],
+                    });
+                    return;
+                }
+
+                if (action === 'cleanup_back') {
+                    await interaction.update({
+                        content: buildStaleSummaryContent(kind, validLines, staleLines),
+                        components: buildCleanupChoiceButtons(kind, token),
+                    });
+                    return;
+                }
+
+                if (action === 'cleanup_pick') {
+                    const page = Number(parts[3] || 0);
+                    await interaction.update({
+                        content: buildStaleSelectionContent(kind, staleLines, page),
+                        components: buildCleanupEntryButtons(kind, token, staleEntries, page),
+                    });
+                    return;
+                }
+
+                if (action === 'cleanup_all') {
+                    let removedLines = [];
+                    if (kind === 'forum') {
+                        removedLines = await applyForumCleanup(interaction.guildId, staleEntries);
+                    } else if (kind === 'rolemention') {
+                        removedLines = await applyRoleMentionCleanup(interaction.guildId, staleEntries);
                     }
 
-                    const pendingRaw = await kv.get(pendingCleanupKey(token));
-                    if (!pendingRaw) {
+                    await kv.del(pendingCleanupKey(token));
+
+                    const summary =
+                        removedLines.length === 0
+                            ? '削除対象はありませんでした。'
+                            : `一括削除を完了しました。 ${removedLines.length} 件の設定を削除しました。`;
+
+                    await interaction.update({
+                        content: summary,
+                        components: [],
+                    });
+
+                    if (removedLines.length > 0) {
+                        const chunks = splitLinesToMessages('削除した設定一覧:\n', removedLines);
+                        for (const chunk of chunks) {
+                            await interaction.followUp({ content: chunk, ephemeral: true });
+                        }
+                    }
+                    return;
+                }
+
+                if (action === 'cleanup_one') {
+                    const index = Number(parts[3]);
+                    const page = Number(parts[4] || 0);
+                    const entry = staleEntries[index];
+
+                    if (!entry) {
                         await interaction.reply({
-                            content: '確認情報の有効期限が切れたため、もう一度 show を実行してください。',
+                            content: 'その削除候補は見つかりませんでした。もう一度 show を実行してください。',
                             ephemeral: true,
                         });
                         return;
                     }
 
-                    const pending = JSON.parse(pendingRaw);
-                    if (pending.guildId !== interaction.guildId || pending.kind !== kind) {
-                        await interaction.reply({
-                            content: 'この確認情報は現在のサーバーでは使用できません。',
-                            ephemeral: true,
-                        });
-                        return;
+                    let removedLine = null;
+                    if (kind === 'forum') {
+                        removedLine = await applySingleForumCleanup(interaction.guildId, entry);
+                    } else if (kind === 'rolemention') {
+                        removedLine = await applySingleRoleMentionCleanup(interaction.guildId, entry);
                     }
 
-                    const staleEntries = pending.staleEntries || [];
-                    const staleLines = pending.staleLines || [];
-                    const validLines = pending.validLines || [];
+                    const nextStaleEntries = staleEntries.filter((_, i) => i !== index);
+                    const nextStaleLines = staleLines.filter((_, i) => i !== index);
 
-                    if (action === 'cleanup_cancel') {
+                    if (nextStaleEntries.length === 0) {
                         await kv.del(pendingCleanupKey(token));
                         await interaction.update({
-                            content: '削除をキャンセルしました。',
+                            content: '個別削除を完了しました。削除候補はすべて解消されました。',
                             components: [],
                         });
-                        return;
-                    }
-
-                    if (action === 'cleanup_back') {
-                        await interaction.update({
-                            content: buildStaleSummaryContent(kind, validLines, staleLines),
-                            components: buildCleanupChoiceButtons(kind, token),
-                        });
-                        return;
-                    }
-
-                    if (action === 'cleanup_pick') {
-                        const page = Number(parts[3] || 0);
-                        await interaction.update({
-                            content: buildStaleSelectionContent(kind, staleLines, page),
-                            components: buildCleanupEntryButtons(kind, token, staleEntries, page),
-                        });
-                        return;
-                    }
-
-                    if (action === 'cleanup_all') {
-                        let removedLines = [];
-                        if (kind === 'forum') {
-                            removedLines = await applyForumCleanup(interaction.guildId, staleEntries);
-                        } else if (kind === 'rolemention') {
-                            removedLines = await applyRoleMentionCleanup(interaction.guildId, staleEntries);
-                        }
-
-                        await kv.del(pendingCleanupKey(token));
-
-                        const summary =
-                            removedLines.length === 0
-                                ? '削除対象はありませんでした。'
-                                : `一括削除を完了しました。 ${removedLines.length} 件の設定を削除しました。`;
-
-                        await interaction.update({
-                            content: summary,
-                            components: [],
-                        });
-
-                        if (removedLines.length > 0) {
-                            const chunks = splitLinesToMessages('削除した設定一覧:\n', removedLines);
-                            for (const chunk of chunks) {
-                                await interaction.followUp({ content: chunk, ephemeral: true });
-                            }
-                        }
-                        return;
-                    }
-
-                    if (action === 'cleanup_one') {
-                        const index = Number(parts[3]);
-                        const page = Number(parts[4] || 0);
-                        const entry = staleEntries[index];
-
-                        if (!entry) {
-                            await interaction.reply({
-                                content: 'その削除候補は見つかりませんでした。もう一度 show を実行してください。',
-                                ephemeral: true,
-                            });
-                            return;
-                        }
-
-                        let removedLine = null;
-                        if (kind === 'forum') {
-                            removedLine = await applySingleForumCleanup(interaction.guildId, entry);
-                        } else if (kind === 'rolemention') {
-                            removedLine = await applySingleRoleMentionCleanup(interaction.guildId, entry);
-                        }
-
-                        const nextStaleEntries = staleEntries.filter((_, i) => i !== index);
-                        const nextStaleLines = staleLines.filter((_, i) => i !== index);
-
-                        if (nextStaleEntries.length === 0) {
-                            await kv.del(pendingCleanupKey(token));
-                            await interaction.update({
-                                content: '個別削除を完了しました。削除候補はすべて解消されました。',
-                                components: [],
-                            });
-                            if (removedLine) {
-                                await interaction.followUp({ content: removedLine, ephemeral: true });
-                            }
-                            return;
-                        }
-
-                        const nextPending = {
-                            ...pending,
-                            staleEntries: nextStaleEntries,
-                            staleLines: nextStaleLines,
-                        };
-                        await kv.setEx(pendingCleanupKey(token), 900, JSON.stringify(nextPending));
-
-                        const maxPage = Math.max(0, Math.ceil(nextStaleEntries.length / 10) - 1);
-                        const nextPage = Math.min(page, maxPage);
-
-                        await interaction.update({
-                            content: buildStaleSelectionContent(kind, nextStaleLines, nextPage),
-                            components: buildCleanupEntryButtons(kind, token, nextStaleEntries, nextPage),
-                        });
-
                         if (removedLine) {
                             await interaction.followUp({ content: removedLine, ephemeral: true });
                         }
                         return;
                     }
-                } catch (error) {
-                    console.error('cleanup button でエラー:', error);
-                    if (interaction.deferred || interaction.replied) {
-                        await interaction.followUp({ content: '確認処理中にエラーが発生しました。', ephemeral: true }).catch(() => null);
-                    } else {
-                        await interaction.reply({ content: '確認処理中にエラーが発生しました。', ephemeral: true }).catch(() => null);
+
+                    const nextPending = {
+                        ...pending,
+                        staleEntries: nextStaleEntries,
+                        staleLines: nextStaleLines,
+                    };
+                    await kv.setEx(pendingCleanupKey(token), 900, JSON.stringify(nextPending));
+
+                    const maxPage = Math.max(0, Math.ceil(nextStaleEntries.length / 10) - 1);
+                    const nextPage = Math.min(page, maxPage);
+
+                    await interaction.update({
+                        content: buildStaleSelectionContent(kind, nextStaleLines, nextPage),
+                        components: buildCleanupEntryButtons(kind, token, nextStaleEntries, nextPage),
+                    });
+
+                    if (removedLine) {
+                        await interaction.followUp({ content: removedLine, ephemeral: true });
                     }
                     return;
                 }
-            }
-
-            if (!interaction.isChatInputCommand()) return;
-            if (!interaction.inGuild()) {
-                await interaction.reply({
-                    content: 'このコマンドはサーバー内でのみ使用できます。',
-                    ephemeral: true,
-                });
+            } catch (error) {
+                console.error('cleanup button でエラー:', error);
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.followUp({ content: '確認処理中にエラーが発生しました。', ephemeral: true }).catch(() => null);
+                } else {
+                    await interaction.reply({ content: '確認処理中にエラーが発生しました。', ephemeral: true }).catch(() => null);
+                }
                 return;
             }
-            try {
+        }
+
+        if (!interaction.isChatInputCommand()) return;
+        if (!interaction.inGuild()) {
+            await interaction.reply({
+                content: 'このコマンドはサーバー内でのみ使用できます。',
+                ephemeral: true,
+            });
+            return;
+        }
+        try {
             // =========================================================
             // /forum 系
             // =========================================================
