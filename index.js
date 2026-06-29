@@ -78,6 +78,14 @@ function forwardWebhookIndexKey(guildId) {
     return `forward-webhook-index:${guildId}`;
 }
 
+function forwardAllowedBotsKey(guildId, sourceChannelId) {
+    return `forward-allowed-bots:${guildId}:${sourceChannelId}`;
+}
+
+function forwardAllowedWebhooksKey(guildId, sourceChannelId) {
+    return `forward-allowed-webhooks:${guildId}:${sourceChannelId}`;
+}
+
 // ===== 長文分割用 =====
 function splitLinesToMessages(header, lines, maxLength = 1900) {
     const chunks = [];
@@ -1508,6 +1516,7 @@ async function main() {
             // /forward 系
             // =========================================================
             if (interaction.commandName === 'forward') {
+                const group = interaction.options.getSubcommandGroup(false);
                 const sub = interaction.options.getSubcommand();
 
                 if (sub === 'set') {
@@ -1620,6 +1629,191 @@ async function main() {
                             `転送元: <#${sourceChannel.id}>`,
                         ephemeral: true,
                     });
+                    return;
+                }
+                // -------------------------
+                // /forward allowbot 系
+                // -------------------------
+                if (group === 'allowbot' && sub === 'add') {
+                    const sourceChannel = interaction.options.getChannel('source_channel', true);
+                    const bot = interaction.options.getUser('bot', true);
+
+                    if (!bot.bot) {
+                        await interaction.reply({
+                            content: 'Botアカウントを指定してください。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    await kv.sAdd(
+                        forwardAllowedBotsKey(interaction.guildId, sourceChannel.id),
+                        bot.id,
+                    );
+
+                    await interaction.reply({
+                        content:
+                            `転送許可Botを追加しました。\n` +
+                            `転送元: <#${sourceChannel.id}>\n` +
+                            `Bot: <@${bot.id}> (${bot.id})`,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                if (group === 'allowbot' && sub === 'remove') {
+                    const sourceChannel = interaction.options.getChannel('source_channel', true);
+                    const bot = interaction.options.getUser('bot', true);
+
+                    const removed = await kv.sRem(
+                        forwardAllowedBotsKey(interaction.guildId, sourceChannel.id),
+                        bot.id,
+                    );
+
+                    if (!removed) {
+                        await interaction.reply({
+                            content:
+                                `転送元 <#${sourceChannel.id}> の許可Bot一覧に <@${bot.id}> はありませんでした。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    await interaction.reply({
+                        content:
+                            `転送許可Botを削除しました。\n` +
+                            `転送元: <#${sourceChannel.id}>\n` +
+                            `Bot: <@${bot.id}> (${bot.id})`,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                if (group === 'allowbot' && sub === 'show') {
+                    const sourceChannel = interaction.options.getChannel('source_channel', true);
+
+                    const botIds = await kv.sMembers(
+                        forwardAllowedBotsKey(interaction.guildId, sourceChannel.id),
+                    );
+
+                    if (!botIds || botIds.length === 0) {
+                        await interaction.reply({
+                            content: `転送元 <#${sourceChannel.id}> には許可Botがまだありません。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const lines = botIds.map((id, index) => `${index + 1}. <@${id}> (${id})`);
+                    const chunks = splitLinesToMessages(
+                        `転送元 <#${sourceChannel.id}> の許可Bot一覧:\n`,
+                        lines,
+                    );
+
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+                    return;
+                }
+
+                // -------------------------
+                // /forward allowwebhook 系
+                // -------------------------
+                if (group === 'allowwebhook' && sub === 'add') {
+                    const sourceChannel = interaction.options.getChannel('source_channel', true);
+                    const webhookId = interaction.options.getString('webhook_id', true).trim();
+
+                    if (!/^\d{17,20}$/.test(webhookId)) {
+                        await interaction.reply({
+                            content: 'Webhook ID の形式が正しくありません。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    await kv.sAdd(
+                        forwardAllowedWebhooksKey(interaction.guildId, sourceChannel.id),
+                        webhookId,
+                    );
+
+                    await interaction.reply({
+                        content:
+                            `転送許可Webhookを追加しました。\n` +
+                            `転送元: <#${sourceChannel.id}>\n` +
+                            `Webhook ID: ${webhookId}`,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                if (group === 'allowwebhook' && sub === 'remove') {
+                    const sourceChannel = interaction.options.getChannel('source_channel', true);
+                    const webhookId = interaction.options.getString('webhook_id', true).trim();
+
+                    const removed = await kv.sRem(
+                        forwardAllowedWebhooksKey(interaction.guildId, sourceChannel.id),
+                        webhookId,
+                    );
+
+                    if (!removed) {
+                        await interaction.reply({
+                            content:
+                                `転送元 <#${sourceChannel.id}> の許可Webhook一覧に ${webhookId} はありませんでした。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    await interaction.reply({
+                        content:
+                            `転送許可Webhookを削除しました。\n` +
+                            `転送元: <#${sourceChannel.id}>\n` +
+                            `Webhook ID: ${webhookId}`,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                if (group === 'allowwebhook' && sub === 'show') {
+                    const sourceChannel = interaction.options.getChannel('source_channel', true);
+
+                    const webhookIds = await kv.sMembers(
+                        forwardAllowedWebhooksKey(interaction.guildId, sourceChannel.id),
+                    );
+
+                    if (!webhookIds || webhookIds.length === 0) {
+                        await interaction.reply({
+                            content: `転送元 <#${sourceChannel.id}> には許可Webhookがまだありません。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const lines = webhookIds.map((id, index) => `${index + 1}. ${id}`);
+                    const chunks = splitLinesToMessages(
+                        `転送元 <#${sourceChannel.id}> の許可Webhook一覧:\n`,
+                        lines,
+                    );
+
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
                     return;
                 }
             }
@@ -1776,16 +1970,27 @@ async function main() {
         try {
             if (!message.guild) return;
 
-            console.log(
-                '[forward check]',
-                'authorTag=', message.author.tag,
-                'authorId=', message.author.id,
-                'bot=', message.author.bot,
-                'webhookId=', message.webhookId,
-            );
-
             // 自分自身のBot投稿だけ無視
             if (message.author.id === client.user.id) return;
+
+            // 許可Bot / 許可Webhookリストを読む
+            const allowedBotIds = await kv.sMembers(
+                forwardAllowedBotsKey(message.guildId, message.channelId),
+            );
+
+            const allowedWebhookIds = await kv.sMembers(
+                forwardAllowedWebhooksKey(message.guildId, message.channelId),
+            );
+
+            // Webhook投稿なら、許可Webhookだけ通す
+            if (message.webhookId) {
+                if (!allowedWebhookIds.includes(message.webhookId)) return;
+            }
+            // 通常Bot投稿なら、許可Botだけ通す
+            else if (message.author.bot) {
+                if (!allowedBotIds.includes(message.author.id)) return;
+            }
+            // 人間投稿はそのまま通す
 
             const webhookUrls = await kv.sMembers(
                 forwardWebhookTargetsKey(message.guildId, message.channelId),

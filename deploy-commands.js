@@ -397,7 +397,114 @@ const commands = [
                         .setDescription('削除したいWebhook URL')
                         .setRequired(true),
                 ),
+    )
+        .addSubcommandGroup((group) =>
+            group
+                .setName('allowbot')
+                .setDescription('転送を許可するBotを管理します')
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('add')
+                        .setDescription('転送を許可するBotを追加します')
+                        .addChannelOption((option) =>
+                            option
+                                .setName('source_channel')
+                                .setDescription('転送元チャンネル')
+                                .addChannelTypes(ChannelType.GuildText)
+                                .setRequired(true),
+                        )
+                        .addUserOption((option) =>
+                            option
+                                .setName('bot')
+                                .setDescription('許可するBot')
+                                .setRequired(true),
+                        ),
+                )
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('remove')
+                        .setDescription('転送を許可するBotを削除します')
+                        .addChannelOption((option) =>
+                            option
+                                .setName('source_channel')
+                                .setDescription('転送元チャンネル')
+                                .addChannelTypes(ChannelType.GuildText)
+                                .setRequired(true),
+                        )
+                        .addUserOption((option) =>
+                            option
+                                .setName('bot')
+                                .setDescription('削除するBot')
+                                .setRequired(true),
+                        ),
+                )
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('show')
+                        .setDescription('転送を許可しているBot一覧を表示します')
+                        .addChannelOption((option) =>
+                            option
+                                .setName('source_channel')
+                                .setDescription('転送元チャンネル')
+                                .addChannelTypes(ChannelType.GuildText)
+                                .setRequired(true),
+                        ),
+                ),
         )
+        .addSubcommandGroup((group) =>
+            group
+                .setName('allowwebhook')
+                .setDescription('転送を許可するWebhookを管理します')
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('add')
+                        .setDescription('転送を許可するWebhook IDを追加します')
+                        .addChannelOption((option) =>
+                            option
+                                .setName('source_channel')
+                                .setDescription('転送元チャンネル')
+                                .addChannelTypes(ChannelType.GuildText)
+                                .setRequired(true),
+                        )
+                        .addStringOption((option) =>
+                            option
+                                .setName('webhook_id')
+                                .setDescription('許可するWebhook ID')
+                                .setRequired(true),
+                        ),
+                )
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('remove')
+                        .setDescription('転送を許可するWebhook IDを削除します')
+                        .addChannelOption((option) =>
+                            option
+                                .setName('source_channel')
+                                .setDescription('転送元チャンネル')
+                                .addChannelTypes(ChannelType.GuildText)
+                                .setRequired(true),
+                        )
+                        .addStringOption((option) =>
+                            option
+                                .setName('webhook_id')
+                                .setDescription('削除するWebhook ID')
+                                .setRequired(true),
+                        ),
+                )
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('show')
+                        .setDescription('転送を許可しているWebhook一覧を表示します')
+                        .addChannelOption((option) =>
+                            option
+                                .setName('source_channel')
+                                .setDescription('転送元チャンネル')
+                                .addChannelTypes(ChannelType.GuildText)
+                                .setRequired(true),
+                        ),
+                ),
+        )
+
         .toJSON(),
 ];
 
