@@ -23,6 +23,11 @@ const textOrThreadTypes = [
 
 const commands = [
     new SlashCommandBuilder()
+        .setName('help')
+        .setDescription('このBotの使い方マニュアルを表示します')
+        .toJSON(),
+
+    new SlashCommandBuilder()
         .setName('forum')
         .setDescription('フォーラム通知設定を管理します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)

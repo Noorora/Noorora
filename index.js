@@ -203,6 +203,153 @@ const DEFAULT_ROLE_MENTION_MESSAGE_TEMPLATE =
     '{body_quote}\\n' +
     '{link}';
 
+function buildHelpLines() {
+    return [
+        '## Bot使い方マニュアル',
+        '',
+        'このBotは、フォーラム通知、ロールメンション転載、自動リアクション、ロール確認、Webhook転送などを行えます。',
+        '',
+        '---',
+        '',
+        '## /forum',
+        'フォーラム通知設定を管理します。',
+        '',
+        '### /forum channel',
+        '指定したフォーラムに新しいスレッドが作成されたとき、指定チャンネルまたはスレッドへ通知します。',
+        '',
+        '例:',
+        '`/forum channel target_channel:#通知先 forum:#フォーラム`',
+        '`/forum channel target_channel:#通知先 forum_ids:123,456,789`',
+        '',
+        '### /forum show',
+        '現在のフォーラム通知設定を表示します。',
+        '消えている通知先がある場合は、一括削除または個別削除できます。',
+        '',
+        '### /forum unset',
+        'フォーラム通知設定を削除します。',
+        '',
+        '### /forum placeholders',
+        'フォーラム通知メッセージで使えるプレースホルダ一覧を表示します。',
+        '',
+        '---',
+        '',
+        '## /rolemention',
+        '特定ロールがメンションされた投稿を、別チャンネルまたはスレッドへ転載します。',
+        '',
+        '### /rolemention set',
+        'ロールメンション転載設定を追加します。',
+        '',
+        '例:',
+        '`/rolemention set role:@対象ロール target_channel:#転載先`',
+        '',
+        '### /rolemention show',
+        '現在のロールメンション転載設定を表示します。',
+        '消えている転載先がある場合は、一括削除または個別削除できます。',
+        '',
+        '### /rolemention unset',
+        '指定ロールの転載設定を削除します。',
+        '',
+        '### /rolemention placeholders',
+        'ロールメンション転載メッセージで使えるプレースホルダ一覧を表示します。',
+        '',
+        '---',
+        '',
+        '## /reaction',
+        '指定チャンネルで、指定ユーザーの投稿に自動リアクションを付けます。',
+        '',
+        '### /reaction set',
+        '自動リアクション設定を追加します。',
+        '',
+        '例:',
+        '`/reaction set target_channel:#対象チャンネル user:@対象ユーザー emoji:✅`',
+        '',
+        '### /reaction show',
+        '現在の自動リアクション設定一覧を表示します。',
+        '',
+        '### /reaction unset',
+        '自動リアクション設定を削除します。',
+        '',
+        '### /reaction allowbot add/show/remove',
+        'Bot投稿も自動リアクション対象にしたい場合、許可Botを管理します。',
+        '',
+        '---',
+        '',
+        '## /forward',
+        '特定チャンネルの投稿を、Webhookを使って別チャンネルへ転送します。',
+        '別サーバーへの転送も可能です。',
+        '',
+        '### /forward set',
+        '転送元チャンネルと転送先Webhook URLを登録します。',
+        '',
+        '例:',
+        '`/forward set source_channel:#転送元 target_webhook_url:https://discord.com/api/webhooks/...`',
+        '',
+        '### /forward show',
+        '転送設定、許可Bot、許可Webhookをまとめて表示します。',
+        '',
+        '### /forward unset',
+        '転送先Webhook URLの設定を削除します。',
+        '',
+        '### /forward allow add',
+        '転送を許可するBotまたはWebhookを追加します。',
+        '',
+        '例:',
+        '`/forward allow add source_channel:#転送元 type:webhook id:1520969045063405628`',
+        '`/forward allow add source_channel:#転送元 type:bot id:123456789012345678`',
+        '',
+        '### /forward allow remove',
+        '転送許可対象を削除します。',
+        '',
+        '例:',
+        '`/forward allow remove source_channel:#転送元 type:webhook id:1520969045063405628`',
+        '',
+        '### 転送仕様',
+        '・人間の投稿はそのまま転送対象になります。',
+        '・Bot投稿は、許可Botに登録されている場合だけ転送されます。',
+        '・Webhook投稿は、許可Webhookに登録されている場合だけ転送されます。',
+        '・転送時のメンション通知は飛ばさない設定です。',
+        '・添付ファイルはWebhook転送で一緒に送信できます。',
+        '',
+        '---',
+        '',
+        '## /role',
+        'ロール条件でメンバー一覧やコピペ用メンションを表示します。',
+        '',
+        '### /role missing list',
+        '指定ロールを持っていないメンバー一覧を表示します。',
+        '',
+        '### /role missing mention',
+        '指定ロールを持っていないメンバーのコピペ用メンションを表示します。',
+        '',
+        '### /role channelnever list',
+        '指定ロールを持っておらず、指定チャンネルで一度も発言していないメンバーを表示します。',
+        '',
+        '### /role channelnever mention',
+        '上記条件に当てはまるメンバーのコピペ用メンションを表示します。',
+        '',
+        '### /role filter list',
+        'あるロールを持ち、別のロールを持っていないメンバーを表示します。',
+        '',
+        '### /role filter mention',
+        '上記条件に当てはまるメンバーのコピペ用メンションを表示します。',
+        '',
+        '---',
+        '',
+        '## /hasrole',
+        '指定したロールを持っているメンバー一覧を表示します。',
+        '',
+        '例:',
+        '`/hasrole list role:@対象ロール`',
+        '',
+        '---',
+        '',
+        '## 注意',
+        '・管理系コマンドは基本的にサーバー管理権限を持つ人向けです。',
+        '・Webhook URLは秘密情報です。公開チャンネルやGitHubなどに貼らないでください。',
+        '・転送ループを防ぐため、このBot自身の投稿は転送しません。',
+    ];
+}
+
 function renderRoleMentionMessage(template, data) {
     return template
         .replaceAll('\\r\\n', '\n')
@@ -663,6 +810,27 @@ async function main() {
             return;
         }
         try {
+            // =========================================================
+            // /help 系
+            // =========================================================
+            if (interaction.commandName === 'help') {
+                const helpLines = buildHelpLines();
+                const chunks = splitLinesToMessages('', helpLines);
+
+                await interaction.reply({
+                    content: chunks[0],
+                    ephemeral: true,
+                });
+
+                for (let i = 1; i < chunks.length; i++) {
+                    await interaction.followUp({
+                        content: chunks[i],
+                        ephemeral: true,
+                    });
+                }
+                return;
+            }
+
             // =========================================================
             // /forum 系
             // =========================================================
