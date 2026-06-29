@@ -352,6 +352,53 @@ const commands = [
                 ),
         )
         .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('forward')
+        .setDescription('特定チャンネルの書き込み転送設定を管理します')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('set')
+                .setDescription('転送設定を追加または更新します')
+                .addChannelOption((option) =>
+                    option
+                        .setName('source_channel')
+                        .setDescription('転送元チャンネル')
+                        .addChannelTypes(ChannelType.GuildText)
+                        .setRequired(true),
+                )
+                .addStringOption((option) =>
+                    option
+                        .setName('target_channel_id')
+                        .setDescription('転送先チャンネルまたはスレッドのID')
+                        .setRequired(true),
+                ),
+        )
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('show')
+                .setDescription('現在の転送設定一覧を表示します'),
+        )
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('unset')
+                .setDescription('転送設定を削除します')
+                .addChannelOption((option) =>
+                    option
+                        .setName('source_channel')
+                        .setDescription('転送元チャンネル')
+                        .addChannelTypes(ChannelType.GuildText)
+                        .setRequired(true),
+                )
+                .addStringOption((option) =>
+                    option
+                        .setName('target_channel_id')
+                        .setDescription('削除したい転送先チャンネルまたはスレッドのID')
+                        .setRequired(true),
+                ),
+        )
+        .toJSON(),
 ];
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);

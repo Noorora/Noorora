@@ -62,6 +62,13 @@ function pendingCleanupKey(token) {
 function roleMentionMessageMapKey(guildId) {
     return `role-mention-message-map:${guildId}`;
 }
+function forwardTargetsKey(guildId, sourceChannelId) {
+    return `forward-targets:${guildId}:${sourceChannelId}`;
+}
+
+function forwardIndexKey(guildId) {
+    return `forward-index:${guildId}`;
+}
 
 // ===== 長文分割用 =====
 function splitLinesToMessages(header, lines, maxLength = 1900) {
@@ -1630,6 +1637,60 @@ async function main() {
             }
         } catch (error) {
             console.error('messageCreate でロールメンション転載失敗:', error);
+        }
+    });
+
+    client.on(Events.MessageCreate, async (message) => {
+        try {
+            if (!message.guild) return;
+            if (message.author.bot) return;
+
+            const targetIds = await kv.sMembers(
+                forwardTargetsKey(message.guildId, message.channelId),
+            );
+
+            if (!targetIds || targetIds.length === 0) return;
+
+            // ✅ 本文を1行に圧縮
+            let preview = message.content?.trim() || '（本文なし）';
+            preview = preview.replace(/\n/g, ' ');
+
+            // ✅ 長すぎる場合カット
+            if (preview.length > 100) {
+                preview = preview.slice(0, 100) + '...';
+            }
+
+            // ✅ embed作成
+            const embed = {
+                author: {
+                    name: message.author.tag,
+                    icon_url: message.author.displayAvatarURL(),
+                },
+                description: preview,
+                footer: {
+                    text: `#${message.channel.name}`,
+                },
+                color: 0x5865F2, // Discordっぽい色
+                timestamp: new Date().toISOString(),
+            };
+
+            const content = `→ 元投稿へ\n${message.url}`;
+
+            for (const targetId of targetIds) {
+                const target = await client.channels.fetch(targetId).catch(() => null);
+                if (!target || typeof target.send !== 'function') continue;
+
+                await target.send({
+                    content,
+                    embeds: [embed],
+                    allowedMentions: {
+                        parse: [],
+                    },
+                });
+            }
+
+        } catch (error) {
+            console.error('転送エラー:', error);
         }
     });
 
