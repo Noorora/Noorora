@@ -1775,7 +1775,9 @@ async function main() {
     client.on(Events.MessageCreate, async (message) => {
         try {
             if (!message.guild) return;
-            if (message.author.bot) return;
+
+            // 自分自身のBot投稿だけ無視
+            if (message.author.id === client.user.id) return;
 
             const webhookUrls = await kv.sMembers(
                 forwardWebhookTargetsKey(message.guildId, message.channelId),
@@ -1784,17 +1786,14 @@ async function main() {
             if (!webhookUrls || webhookUrls.length === 0) return;
 
             let body = message.content?.trim() || '本文なし';
-            body = body.replace(/\n/g, '\n');
 
             const attachmentLines =
                 message.attachments.size > 0
                     ? [...message.attachments.values()].map((attachment) => attachment.url)
                     : [];
 
-            const sourceLink = `[<元投稿へ>](${message.url})`;
-
             const content =
-                `${body} ${sourceLink}` +
+                `${body} <元投稿へ>\n${message.url}` +
                 (
                     attachmentLines.length > 0
                         ? `\n${attachmentLines.join('\n')}`
@@ -1831,6 +1830,14 @@ async function main() {
             console.error('Webhook転送でエラー:', error);
         }
     });
+
+    console.log(
+        '[forward check]',
+        'authorTag=', message.author.tag,
+        'authorId=', message.author.id,
+        'bot=', message.author.bot,
+        'webhookId=', message.webhookId,
+    );
 
     await client.login(TOKEN);
 }
