@@ -1977,7 +1977,7 @@ async function main() {
                     : [];
 
             const content =
-                `${body} <元投稿へ>\n${message.url}` +
+                `${body}` +
                 (
                     attachmentLines.length > 0
                         ? `\n${attachmentLines.join('\n')}`
