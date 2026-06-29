@@ -1495,6 +1495,124 @@ async function main() {
                     return;
                 }
             }
+
+            // =========================================================
+            // /forward 系
+            // =========================================================
+            if (interaction.commandName === 'forward') {
+                const sub = interaction.options.getSubcommand();
+
+                if (sub === 'set') {
+                    const sourceChannel = interaction.options.getChannel('source_channel', true);
+                    const targetChannelId = interaction.options.getString('target_channel_id', true).trim();
+
+                    const targetChannel = await client.channels.fetch(targetChannelId).catch(() => null);
+
+                    if (!targetChannel || typeof targetChannel.send !== 'function') {
+                        await interaction.reply({
+                            content:
+                                '転送先チャンネルを取得できませんでした。\n' +
+                                'Botが転送先サーバーに入っているか、チャンネルIDが正しいか、送信権限があるか確認してください。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    await kv.sAdd(forwardTargetsKey(interaction.guildId, sourceChannel.id), targetChannelId);
+                    await kv.sAdd(forwardIndexKey(interaction.guildId), sourceChannel.id);
+
+                    await interaction.reply({
+                        content:
+                            `転送設定を登録しました。\n` +
+                            `転送元: <#${sourceChannel.id}>\n` +
+                            `転送先ID: ${targetChannelId}`,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                if (sub === 'show') {
+                    const sourceChannelIds = await kv.sMembers(forwardIndexKey(interaction.guildId));
+
+                    if (!sourceChannelIds || sourceChannelIds.length === 0) {
+                        await interaction.reply({
+                            content: 'このサーバーにはまだ転送設定がありません。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const lines = [];
+
+                    for (const sourceChannelId of sourceChannelIds) {
+                        const targetIds = await kv.sMembers(forwardTargetsKey(interaction.guildId, sourceChannelId));
+                        if (!targetIds || targetIds.length === 0) continue;
+
+                        lines.push(`転送元: <#${sourceChannelId}>`);
+                        for (const targetId of targetIds) {
+                            lines.push(`　・転送先ID: ${targetId}`);
+                        }
+                    }
+
+                    if (lines.length === 0) {
+                        await interaction.reply({
+                            content: 'このサーバーにはまだ転送設定がありません。',
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const chunks = splitLinesToMessages('現在の転送設定一覧:\n', lines);
+
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+                    return;
+                }
+
+                if (sub === 'unset') {
+                    const sourceChannel = interaction.options.getChannel('source_channel', true);
+                    const targetChannelId = interaction.options.getString('target_channel_id', true).trim();
+
+                    const removed = await kv.sRem(
+                        forwardTargetsKey(interaction.guildId, sourceChannel.id),
+                        targetChannelId,
+                    );
+
+                    if (!removed) {
+                        await interaction.reply({
+                            content:
+                                `転送元 <#${sourceChannel.id}> から転送先 ${targetChannelId} への設定は見つかりませんでした。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const remainingTargets = await kv.sMembers(forwardTargetsKey(interaction.guildId, sourceChannel.id));
+                    if (!remainingTargets || remainingTargets.length === 0) {
+                        await kv.del(forwardTargetsKey(interaction.guildId, sourceChannel.id));
+                        await kv.sRem(forwardIndexKey(interaction.guildId), sourceChannel.id);
+                    }
+
+                    await interaction.reply({
+                        content:
+                            `転送設定を削除しました。\n` +
+                            `転送元: <#${sourceChannel.id}>\n` +
+                            `転送先ID: ${targetChannelId}`,
+                        ephemeral: true,
+                    });
+                    return;
+                }
+            }
+
         } catch (error) {
             console.error('interactionCreate でエラー:', error);
             if (interaction.deferred) {
