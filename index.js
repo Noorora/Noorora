@@ -1969,9 +1969,14 @@ async function main() {
 
             if (!webhookUrls || webhookUrls.length === 0) return;
 
-            let body = message.content?.trim() || '本文なし';
+            let body = message.content?.trim() || '';
 
             const attachmentLines =
+                message.attachments.size > 0
+                    ? [...message.attachments.values()].map((attachment) => attachment.url)
+                    : [];
+
+            const files =
                 message.attachments.size > 0
                     ? [...message.attachments.values()].map((attachment) => attachment.url)
                     : [];
@@ -1980,9 +1985,19 @@ async function main() {
                 `${body}` +
                 (
                     attachmentLines.length > 0
-                        ? `\n${attachmentLines.join('\n')}`
+                        ? `${body ? '\n' : ''}${attachmentLines.join('\n')}`
                         : ''
                 );
+
+            await webhookClient.send({
+                content,
+                username: webhookUsername,
+                avatarURL,
+                files,
+                allowedMentions: {
+                    parse: [],
+                },
+            });
 
             const displayName =
                 message.member?.displayName ||
