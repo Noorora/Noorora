@@ -1776,6 +1776,14 @@ async function main() {
         try {
             if (!message.guild) return;
 
+            console.log(
+                '[forward check]',
+                'authorTag=', message.author.tag,
+                'authorId=', message.author.id,
+                'bot=', message.author.bot,
+                'webhookId=', message.webhookId,
+            );
+
             // 自分自身のBot投稿だけ無視
             if (message.author.id === client.user.id) return;
 
@@ -1830,14 +1838,6 @@ async function main() {
             console.error('Webhook転送でエラー:', error);
         }
     });
-
-    console.log(
-        '[forward check]',
-        'authorTag=', message.author.tag,
-        'authorId=', message.author.id,
-        'bot=', message.author.bot,
-        'webhookId=', message.webhookId,
-    );
 
     await client.login(TOKEN);
 }
