@@ -1988,10 +1988,15 @@ async function main() {
 
             const webhookUsername = `${displayName} | #${message.channel.name}`;
 
-            const avatarURL = message.author.displayAvatarURL({
-                extension: 'png',
-                size: 128,
-            });
+            const avatarURL =
+                message.member?.displayAvatarURL({
+                    extension: 'png',
+                    size: 128,
+                }) ||
+                message.author.displayAvatarURL({
+                    extension: 'png',
+                    size: 128,
+                });
 
             for (const webhookUrl of webhookUrls) {
                 const webhookClient = new WebhookClient({
