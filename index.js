@@ -120,10 +120,8 @@ function splitBySpaceToMessages(header, items, maxLength = 1800) {
 }
 
 async function normalizeCustomEmojiText(message, text) {
-    if (!text) return text;
+    if (!text || !message.guild) return text;
 
-    // すでに <:name:id> / <a:name:id> 形式のものはそのまま
-    // :emoji_name: 形式だけを変換対象にする
     const emojiNamePattern = /:([a-zA-Z0-9_]+):/g;
 
     let guildEmojis;
@@ -136,11 +134,19 @@ async function normalizeCustomEmojiText(message, text) {
 
     return text.replace(emojiNamePattern, (match, emojiName) => {
         const emoji = guildEmojis.find((item) => item.name === emojiName);
-        if (!emoji) return match;
 
-        return emoji.animated
+        if (!emoji) {
+            console.log(`[emoji normalize] not found: ${emojiName}`);
+            return match;
+        }
+
+        const converted = emoji.animated
             ? `<a:${emoji.name}:${emoji.id}>`
             : `<:${emoji.name}:${emoji.id}>`;
+
+        console.log(`[emoji normalize] ${match} -> ${converted}`);
+
+        return converted;
     });
 }
 
@@ -664,6 +670,7 @@ async function main() {
             GatewayIntentBits.GuildMembers,
             GatewayIntentBits.GuildMessages,
             GatewayIntentBits.MessageContent,
+            GatewayIntentBits.GuildExpressions,
         ],
     });
 
