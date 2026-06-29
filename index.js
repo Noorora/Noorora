@@ -2170,7 +2170,7 @@ async function main() {
             if (!webhookUrls || webhookUrls.length === 0) return;
 
             let body = message.content?.trim() || '';
-            body = await normalizeCustomEmojiText(message, body);
+            body = toPlainCustomEmojiText(body);
 
             const files =
                 message.attachments.size > 0
