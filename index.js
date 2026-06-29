@@ -119,6 +119,31 @@ function splitBySpaceToMessages(header, items, maxLength = 1800) {
     return chunks;
 }
 
+async function normalizeCustomEmojiText(message, text) {
+    if (!text) return text;
+
+    // すでに <:name:id> / <a:name:id> 形式のものはそのまま
+    // :emoji_name: 形式だけを変換対象にする
+    const emojiNamePattern = /:([a-zA-Z0-9_]+):/g;
+
+    let guildEmojis;
+    try {
+        guildEmojis = await message.guild.emojis.fetch();
+    } catch (error) {
+        console.warn('絵文字一覧の取得に失敗:', error);
+        return text;
+    }
+
+    return text.replace(emojiNamePattern, (match, emojiName) => {
+        const emoji = guildEmojis.find((item) => item.name === emojiName);
+        if (!emoji) return match;
+
+        return emoji.animated
+            ? `<a:${emoji.name}:${emoji.id}>`
+            : `<:${emoji.name}:${emoji.id}>`;
+    });
+}
+
 // ===== 転送先へ送信 =====
 async function sendToTarget(client, targetId, message) {
     const target = await client.channels.fetch(targetId).catch(() => null);
@@ -2137,7 +2162,8 @@ async function main() {
 
             if (!webhookUrls || webhookUrls.length === 0) return;
 
-            const body = message.content?.trim() || '';
+            let body = message.content?.trim() || '';
+            body = await normalizeCustomEmojiText(message, body);
 
             const files =
                 message.attachments.size > 0
