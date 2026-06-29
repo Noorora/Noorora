@@ -370,8 +370,8 @@ const commands = [
                 )
                 .addStringOption((option) =>
                     option
-                        .setName('target_channel_id')
-                        .setDescription('転送先チャンネルまたはスレッドのID')
+                        .setName('target_webhook_url')
+                        .setDescription('転送先チャンネルのWebhook URL')
                         .setRequired(true),
                 ),
         )
@@ -393,8 +393,8 @@ const commands = [
                 )
                 .addStringOption((option) =>
                     option
-                        .setName('target_channel_id')
-                        .setDescription('削除したい転送先チャンネルまたはスレッドのID')
+                        .setName('target_webhook_url')
+                        .setDescription('削除したいWebhook URL')
                         .setRequired(true),
                 ),
         )

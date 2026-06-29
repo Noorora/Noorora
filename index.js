@@ -7,6 +7,7 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
+    WebhookClient,
 } = require('discord.js');
 const { createClient } = require('redis');
 const express = require('express');
@@ -68,6 +69,13 @@ function forwardTargetsKey(guildId, sourceChannelId) {
 
 function forwardIndexKey(guildId) {
     return `forward-index:${guildId}`;
+}
+function forwardWebhookTargetsKey(guildId, sourceChannelId) {
+    return `forward-webhook-targets:${guildId}:${sourceChannelId}`;
+}
+
+function forwardWebhookIndexKey(guildId) {
+    return `forward-webhook-index:${guildId}`;
 }
 
 // ===== 長文分割用 =====
@@ -1504,35 +1512,34 @@ async function main() {
 
                 if (sub === 'set') {
                     const sourceChannel = interaction.options.getChannel('source_channel', true);
-                    const targetChannelId = interaction.options.getString('target_channel_id', true).trim();
+                    const targetWebhookUrl = interaction.options.getString('target_webhook_url', true).trim();
 
-                    const targetChannel = await client.channels.fetch(targetChannelId).catch(() => null);
-
-                    if (!targetChannel || typeof targetChannel.send !== 'function') {
+                    if (!targetWebhookUrl.startsWith('https://discord.com/api/webhooks/')) {
                         await interaction.reply({
-                            content:
-                                '転送先チャンネルを取得できませんでした。\n' +
-                                'Botが転送先サーバーに入っているか、チャンネルIDが正しいか、送信権限があるか確認してください。',
+                            content: 'Webhook URL の形式が正しくありません。',
                             ephemeral: true,
                         });
                         return;
                     }
 
-                    await kv.sAdd(forwardTargetsKey(interaction.guildId, sourceChannel.id), targetChannelId);
-                    await kv.sAdd(forwardIndexKey(interaction.guildId), sourceChannel.id);
+                    await kv.sAdd(
+                        forwardWebhookTargetsKey(interaction.guildId, sourceChannel.id),
+                        targetWebhookUrl,
+                    );
+                    await kv.sAdd(forwardWebhookIndexKey(interaction.guildId), sourceChannel.id);
 
                     await interaction.reply({
                         content:
                             `転送設定を登録しました。\n` +
                             `転送元: <#${sourceChannel.id}>\n` +
-                            `転送先ID: ${targetChannelId}`,
+                            `転送先: Webhook URL`,
                         ephemeral: true,
                     });
                     return;
                 }
 
                 if (sub === 'show') {
-                    const sourceChannelIds = await kv.sMembers(forwardIndexKey(interaction.guildId));
+                    const sourceChannelIds = await kv.sMembers(forwardWebhookIndexKey(interaction.guildId));
 
                     if (!sourceChannelIds || sourceChannelIds.length === 0) {
                         await interaction.reply({
@@ -1545,12 +1552,15 @@ async function main() {
                     const lines = [];
 
                     for (const sourceChannelId of sourceChannelIds) {
-                        const targetIds = await kv.sMembers(forwardTargetsKey(interaction.guildId, sourceChannelId));
-                        if (!targetIds || targetIds.length === 0) continue;
+                        const webhookUrls = await kv.sMembers(
+                            forwardWebhookTargetsKey(interaction.guildId, sourceChannelId),
+                        );
+
+                        if (!webhookUrls || webhookUrls.length === 0) continue;
 
                         lines.push(`転送元: <#${sourceChannelId}>`);
-                        for (const targetId of targetIds) {
-                            lines.push(`　・転送先ID: ${targetId}`);
+                        for (const webhookUrl of webhookUrls) {
+                            lines.push(`　・転送先Webhook: 登録済み`);
                         }
                     }
 
@@ -1580,33 +1590,34 @@ async function main() {
 
                 if (sub === 'unset') {
                     const sourceChannel = interaction.options.getChannel('source_channel', true);
-                    const targetChannelId = interaction.options.getString('target_channel_id', true).trim();
+                    const targetWebhookUrl = interaction.options.getString('target_webhook_url', true).trim();
 
                     const removed = await kv.sRem(
-                        forwardTargetsKey(interaction.guildId, sourceChannel.id),
-                        targetChannelId,
+                        forwardWebhookTargetsKey(interaction.guildId, sourceChannel.id),
+                        targetWebhookUrl,
                     );
 
                     if (!removed) {
                         await interaction.reply({
-                            content:
-                                `転送元 <#${sourceChannel.id}> から転送先 ${targetChannelId} への設定は見つかりませんでした。`,
+                            content: `転送元 <#${sourceChannel.id}> の指定Webhook設定は見つかりませんでした。`,
                             ephemeral: true,
                         });
                         return;
                     }
 
-                    const remainingTargets = await kv.sMembers(forwardTargetsKey(interaction.guildId, sourceChannel.id));
+                    const remainingTargets = await kv.sMembers(
+                        forwardWebhookTargetsKey(interaction.guildId, sourceChannel.id),
+                    );
+
                     if (!remainingTargets || remainingTargets.length === 0) {
-                        await kv.del(forwardTargetsKey(interaction.guildId, sourceChannel.id));
-                        await kv.sRem(forwardIndexKey(interaction.guildId), sourceChannel.id);
+                        await kv.del(forwardWebhookTargetsKey(interaction.guildId, sourceChannel.id));
+                        await kv.sRem(forwardWebhookIndexKey(interaction.guildId), sourceChannel.id);
                     }
 
                     await interaction.reply({
                         content:
                             `転送設定を削除しました。\n` +
-                            `転送元: <#${sourceChannel.id}>\n` +
-                            `転送先ID: ${targetChannelId}`,
+                            `転送元: <#${sourceChannel.id}>`,
                         ephemeral: true,
                     });
                     return;
@@ -1758,57 +1769,66 @@ async function main() {
         }
     });
 
+    // =========================================================
+    // 特定チャンネルの書き込みをWebhookで別サーバーへ転送
+    // =========================================================
     client.on(Events.MessageCreate, async (message) => {
         try {
             if (!message.guild) return;
             if (message.author.bot) return;
 
-            const targetIds = await kv.sMembers(
-                forwardTargetsKey(message.guildId, message.channelId),
+            const webhookUrls = await kv.sMembers(
+                forwardWebhookTargetsKey(message.guildId, message.channelId),
             );
 
-            if (!targetIds || targetIds.length === 0) return;
+            if (!webhookUrls || webhookUrls.length === 0) return;
 
-            // ✅ 本文を1行に圧縮
-            let preview = message.content?.trim() || '（本文なし）';
-            preview = preview.replace(/\n/g, ' ');
+            let body = message.content?.trim() || '本文なし';
+            body = body.replace(/\n/g, '\n');
 
-            // ✅ 長すぎる場合カット
-            if (preview.length > 100) {
-                preview = preview.slice(0, 100) + '...';
-            }
+            const attachmentLines =
+                message.attachments.size > 0
+                    ? [...message.attachments.values()].map((attachment) => attachment.url)
+                    : [];
 
-            // ✅ embed作成
-            const embed = {
-                author: {
-                    name: message.author.tag,
-                    icon_url: message.author.displayAvatarURL(),
-                },
-                description: preview,
-                footer: {
-                    text: `#${message.channel.name}`,
-                },
-                color: 0x5865F2, // Discordっぽい色
-                timestamp: new Date().toISOString(),
-            };
+            const sourceLink = `[<元投稿へ>](${message.url})`;
 
-            const content = `→ 元投稿へ\n${message.url}`;
+            const content =
+                `${body} ${sourceLink}` +
+                (
+                    attachmentLines.length > 0
+                        ? `\n${attachmentLines.join('\n')}`
+                        : ''
+                );
 
-            for (const targetId of targetIds) {
-                const target = await client.channels.fetch(targetId).catch(() => null);
-                if (!target || typeof target.send !== 'function') continue;
+            const displayName =
+                message.member?.displayName ||
+                message.author.globalName ||
+                message.author.username;
 
-                await target.send({
+            const webhookUsername = `${displayName} | #${message.channel.name}`;
+
+            const avatarURL = message.author.displayAvatarURL({
+                extension: 'png',
+                size: 128,
+            });
+
+            for (const webhookUrl of webhookUrls) {
+                const webhookClient = new WebhookClient({
+                    url: webhookUrl,
+                });
+
+                await webhookClient.send({
                     content,
-                    embeds: [embed],
+                    username: webhookUsername,
+                    avatarURL,
                     allowedMentions: {
                         parse: [],
                     },
                 });
             }
-
         } catch (error) {
-            console.error('転送エラー:', error);
+            console.error('Webhook転送でエラー:', error);
         }
     });
 
