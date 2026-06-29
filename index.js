@@ -1973,7 +1973,10 @@ async function main() {
 
             const files =
                 message.attachments.size > 0
-                    ? [...message.attachments.values()].map((attachment) => attachment.url)
+                    ? [...message.attachments.values()].map((attachment) => ({
+                        attachment: attachment.url,
+                        name: attachment.name || 'attachment',
+                    }))
                     : [];
 
             const content = body || undefined;
