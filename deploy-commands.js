@@ -380,6 +380,8 @@ const commands = [
                                     ChannelType.PublicThread,
                                     ChannelType.PrivateThread,
                                     ChannelType.AnnouncementThread,
+                                    ChannelType.GuildVoice,
+                                    ChannelType.GuildStageVoice,
                                 )
                                 .setRequired(true),
                         ),
@@ -398,6 +400,8 @@ const commands = [
                                     ChannelType.PublicThread,
                                     ChannelType.PrivateThread,
                                     ChannelType.AnnouncementThread,
+                                    ChannelType.GuildVoice,
+                                    ChannelType.GuildStageVoice,
                                 )
                                 .setRequired(true),
                         ),
@@ -428,6 +432,8 @@ const commands = [
                             ChannelType.PublicThread,
                             ChannelType.PrivateThread,
                             ChannelType.AnnouncementThread,
+                            ChannelType.GuildVoice,
+                            ChannelType.GuildStageVoice,
                         )
                         .setRequired(false),
                 ),
@@ -457,6 +463,8 @@ const commands = [
                             ChannelType.PublicThread,
                             ChannelType.PrivateThread,
                             ChannelType.AnnouncementThread,
+                            ChannelType.GuildVoice,
+                            ChannelType.GuildStageVoice,
                         )
                         .setRequired(false),
                 ),
@@ -495,6 +503,8 @@ const commands = [
                                     ChannelType.PublicThread,
                                     ChannelType.PrivateThread,
                                     ChannelType.AnnouncementThread,
+                                    ChannelType.GuildVoice,
+                                    ChannelType.GuildStageVoice,
                                 )
                                 .setRequired(false),
                         ),
@@ -529,6 +539,8 @@ const commands = [
                                 ChannelType.PublicThread,
                                 ChannelType.PrivateThread,
                                 ChannelType.AnnouncementThread,
+                                ChannelType.GuildVoice,
+                                ChannelType.GuildStageVoice,
                             )
                             .setRequired(false),
                     ),

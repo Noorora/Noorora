@@ -2380,6 +2380,17 @@ async function main() {
                         parse: [],
                     },
                 });
+                console.log(
+                    '[forward debug]',
+                    'guild=', message.guildId,
+                    'channel=', message.channelId,
+                    'type=', message.channel?.type,
+                    'name=', message.channel?.name,
+                    'author=', message.author?.tag,
+                    'bot=', message.author?.bot,
+                    'webhookId=', message.webhookId,
+                    'content=', message.content,
+                );
             }
         } catch (error) {
             console.error('Webhook転送でエラー:', error);
