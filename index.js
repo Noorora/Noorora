@@ -127,8 +127,6 @@ function splitBySpaceToMessages(header, items, maxLength = 1800) {
 async function normalizeCustomEmojiText(message, text) {
     if (!text || !message.guild) return text;
 
-    const emojiNamePattern = /:([a-zA-Z0-9_]+):/g;
-
     let guildEmojis;
     try {
         guildEmojis = await message.guild.emojis.fetch();
@@ -137,22 +135,39 @@ async function normalizeCustomEmojiText(message, text) {
         return text;
     }
 
-    return text.replace(emojiNamePattern, (match, emojiName) => {
-        const emoji = guildEmojis.find((item) => item.name === emojiName);
+    return text.replace(
+        /<a?:([^:<>]+):(\d{17,20})>|:([^:\s<>]+):/g,
+        (match, customEmojiName, customEmojiId, shortEmojiName) => {
+            const emojiName = customEmojiName || shortEmojiName;
 
-        if (!emoji) {
-            console.log(`[emoji normalize] not found: ${emojiName}`);
-            return match;
-        }
+            // 絵文字名が英数字・アンダースコア以外なら、ID付き形式にしない
+            // 例: <:🐱:1518208681177780354> → 🐱
+            if (!/^[a-zA-Z0-9_]+$/.test(emojiName)) {
+                console.log(`[emoji normalize] unsafe name: ${match} -> ${emojiName}`);
+                return emojiName;
+            }
 
-        const converted = emoji.animated
-            ? `<a:${emoji.name}:${emoji.id}>`
-            : `<:${emoji.name}:${emoji.id}>`;
+            // すでに <:name:id> / <a:name:id> 形式ならそのまま
+            if (customEmojiName) {
+                return match;
+            }
 
-        console.log(`[emoji normalize] ${match} -> ${converted}`);
+            const emoji = guildEmojis.find((item) => item.name === emojiName);
 
-        return converted;
-    });
+            if (!emoji) {
+                console.log(`[emoji normalize] not found: ${emojiName}`);
+                return match;
+            }
+
+            const converted = emoji.animated
+                ? `<a:${emoji.name}:${emoji.id}>`
+                : `<:${emoji.name}:${emoji.id}>`;
+
+            console.log(`[emoji normalize] ${match} -> ${converted}`);
+
+            return converted;
+        },
+    );
 }
 
 async function normalizeCustomEmojiText(message, text) {
@@ -2354,10 +2369,8 @@ async function main() {
 
             let body = message.content?.trim() || '';
 
-            // 鯖絵文字を <:name:id> / <a:name:id> に変換する
             body = await normalizeCustomEmojiText(message, body);
 
-            // 常に最後に元投稿リンクを追加
             body = `${body}${body ? '\n' : ''}[<元投稿へ>](${message.url})`;
 
             const files =
