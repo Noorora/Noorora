@@ -181,21 +181,15 @@ async function normalizeCustomEmojiText(message, text) {
         return text;
     }
 
-    return text
-        // すでに <:name:id> / <a:name:id> 形式になっているものを処理
-        .replace(/<a?:([^:<>]+):(\d{17,20})>/g, (match, emojiName) => {
-            // 名前が英数字・アンダースコア以外なら、ID付き形式にしない
-            // 例: <:🐱:1518208681177780354> → 🐱
-            if (!/^[a-zA-Z0-9_]+$/.test(emojiName)) {
-                console.log(`[emoji normalize] unsafe custom emoji name: ${match} -> ${emojiName}`);
-                return emojiName;
+    return text.replace(
+        /<a?:([a-zA-Z0-9_]+):(\d{17,20})>|:([a-zA-Z0-9_]+):/g,
+        (match, existingEmojiName, existingEmojiId, shortEmojiName) => {
+            // すでに <:name:id> / <a:name:id> 形式なら絶対に再変換しない
+            if (existingEmojiName && existingEmojiId) {
+                return match;
             }
 
-            return match;
-        })
-
-        // :name: 形式を処理
-        .replace(/:([^:\s<>]+):/g, (match, emojiName) => {
+            const emojiName = shortEmojiName;
             const emoji = guildEmojis.find((item) => item.name === emojiName);
 
             if (!emoji) {
@@ -203,21 +197,14 @@ async function normalizeCustomEmojiText(message, text) {
                 return match;
             }
 
-            // ここが重要
-            // 絵文字名が 🐱 みたいな場合は <:🐱:id> にせず、絵文字だけ返す
-            if (!/^[a-zA-Z0-9_]+$/.test(emoji.name)) {
-                console.log(`[emoji normalize] emoji-name only: ${match} -> ${emoji.name}`);
-                return emoji.name;
-            }
-
             const converted = emoji.animated
                 ? `<a:${emoji.name}:${emoji.id}>`
                 : `<:${emoji.name}:${emoji.id}>`;
 
             console.log(`[emoji normalize] ${match} -> ${converted}`);
-
             return converted;
-        });
+        },
+    );
 }
 
 function toPlainCustomEmojiText(text) {
