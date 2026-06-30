@@ -1,0 +1,221 @@
+{
+  "generated_files": [
+    "commands/forum.js",
+    "commands/forward.js",
+    "commands/hasrole.js",
+    "commands/help.js",
+    "commands/joined.js",
+    "commands/reaction.js",
+    "commands/role.js",
+    "commands/rolemention.js",
+    "components/cleanupButtons.js",
+    "config/constants.js",
+    "deploy-commands.js",
+    "events/forumThreadCreate.js",
+    "events/forwardRelay.js",
+    "events/messageReaction.js",
+    "events/roleMentionRelay.js",
+    "handlers/cleanupButtons.js",
+    "handlers/interactionCreate.js",
+    "handlers/messageCreate.js",
+    "index.js",
+    "keys/redisKeys.js",
+    "services/forumService.js",
+    "services/roleMentionService.js",
+    "templates/forumTemplate.js",
+    "templates/helpTemplate.js",
+    "templates/roleMentionTemplate.js",
+    "utils/channel.js",
+    "utils/emoji.js",
+    "utils/ephemeral.js",
+    "utils/member.js",
+    "utils/messageSplit.js"
+  ],
+  "node_check_available": true,
+  "node_check_results": [
+    {
+      "file": "refactored-discord-bot/commands/forum.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/commands/forward.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/commands/hasrole.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/commands/help.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/commands/joined.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/commands/reaction.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/commands/role.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/commands/rolemention.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/components/cleanupButtons.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/config/constants.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/deploy-commands.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/events/forumThreadCreate.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/events/forwardRelay.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/events/messageReaction.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/events/roleMentionRelay.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/handlers/cleanupButtons.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/handlers/interactionCreate.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/handlers/messageCreate.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/index.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/keys/redisKeys.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/services/forumService.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/services/roleMentionService.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/templates/forumTemplate.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/templates/helpTemplate.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/templates/roleMentionTemplate.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/utils/channel.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/utils/emoji.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/utils/ephemeral.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/utils/member.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "file": "refactored-discord-bot/utils/messageSplit.js",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "notes": [
+    "CommonJS require/module.exports 形式で分割しています。Render の Start Command は node index.js のままでOKです。",
+    "deploy-commands.js はスラッシュコマンド追加/変更を含むため、反映時は node deploy-commands.js を実行してください。"
+  ]
+}
