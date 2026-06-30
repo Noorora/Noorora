@@ -264,6 +264,15 @@ async function collectSpeakerIdsFromChannel(channel) {
     return { speakerIds, fetchedCount };
 }
 
+const FORUM_PLACEHOLDER_LINES = [
+    '・`{forum}` → フォーラムメンション',
+    '・`{forumName}` → フォーラム名',
+    '・`{thread}` → スレッド名',
+    '・`{author}` → スレ主メンション',
+    '・`{newcomerMark}` → ご新規さんの場合だけ 🔰 を表示',
+    '・`{link}` → スレッドURL',
+];
+
 // ===== フォーラム通知テンプレート =====
 const DEFAULT_FORUM_MESSAGE_TEMPLATE =
     '{forum} に、新しいスレッドが作成されました！\\n' +
@@ -292,6 +301,53 @@ function buildNewcomerMark(member) {
 
     return daysSinceJoin <= NEWCOMER_DAYS ? ' 🔰' : '';
 }
+function buildJoinedDaysInfo(member) {
+    if (!member || !member.joinedTimestamp) {
+        return null;
+    }
+
+    const daysSinceJoin = Math.floor(
+        (Date.now() - member.joinedTimestamp) / (1000 * 60 * 60 * 24),
+    );
+
+    const joinedAtText = member.joinedAt
+        ? member.joinedAt.toLocaleString('ja-JP', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+        })
+        : '不明';
+
+    return {
+        daysSinceJoin,
+        joinedAtText,
+    };
+}
+function buildForumPlaceholdersHelp() {
+    return [
+        '## カスタムメッセージで使えるプレースホルダ一覧',
+        ...FORUM_PLACEHOLDER_LINES,
+        '',
+        '## 改行の書き方',
+        '改行したい場合は `\\n` を使ってください。',
+        '',
+        '## 例',
+        '```txt',
+        DEFAULT_FORUM_MESSAGE_TEMPLATE.replaceAll('\\n', '\n'),
+        '```',
+    ].join('\n');
+}
+
+const ROLE_MENTION_PLACEHOLDER_LINES = [
+    '・`{author}` → 送信者メンション',
+    '・`{roles}` → メンションされたロール一覧',
+    '・`{channel}` → 元チャンネルメンション',
+    '・`{link}` → 元メッセージリンク',
+    '・`{body}` → 本文そのまま',
+    '・`{body_quote}` → 引用形式の本文',
+];
 
 // ===== ロールメンション転載テンプレート =====
 const DEFAULT_ROLE_MENTION_MESSAGE_TEMPLATE =
@@ -299,33 +355,65 @@ const DEFAULT_ROLE_MENTION_MESSAGE_TEMPLATE =
     '{body_quote}\\n' +
     '{link}';
 
+function buildRoleMentionPlaceholdersHelp() {
+    return [
+        '## ロールメンション転載で使えるプレースホルダ一覧',
+        ...ROLE_MENTION_PLACEHOLDER_LINES,
+        '',
+        '## 改行の書き方',
+        '改行したい場合は `\\n` を使ってください。',
+        '',
+        '## 例',
+        '```txt',
+        DEFAULT_ROLE_MENTION_MESSAGE_TEMPLATE.replaceAll('\\n', '\n'),
+        '```',
+    ].join('\n');
+}
+
 function buildHelpLines() {
     return [
         '## Bot使い方マニュアル',
         '',
         'このBotは、フォーラム通知、ロールメンション転載、自動リアクション、ロール確認、Webhook転送などを行えます。',
+        '管理系コマンドは、基本的にサーバー管理権限を持つ人向けです。',
         '',
         '---',
         '',
         '## /forum',
-        'フォーラム通知設定を管理します。',
+        'フォーラムに新しいスレッドが作成されたとき、指定したチャンネルまたはスレッドへ通知します。',
         '',
         '### /forum channel',
-        '指定したフォーラムに新しいスレッドが作成されたとき、指定チャンネルまたはスレッドへ通知します。',
+        'フォーラム通知設定を追加します。',
         '',
-        '例:',
+        '使用例:',
         '`/forum channel target_channel:#通知先 forum:#フォーラム`',
         '`/forum channel target_channel:#通知先 forum_ids:123,456,789`',
         '',
+        'カスタムメッセージを指定する例:',
+        '`/forum channel target_channel:#通知先 forum:#フォーラム message:{forum} に、新しいスレッドが作成されました！\\nスレ主: {author}{newcomerMark}\\nリンク: [{thread}]({link})`',
+        '',
         '### /forum show',
         '現在のフォーラム通知設定を表示します。',
-        '消えている通知先がある場合は、一括削除または個別削除できます。',
+        '通知先チャンネルやフォーラムが消えている場合は、一括削除または個別削除ができます。',
         '',
         '### /forum unset',
         'フォーラム通知設定を削除します。',
+        'forum だけ指定すれば、そのフォーラムに紐づく通知設定を削除できます。',
+        'target_channel だけ指定すれば、その通知先に紐づく設定をまとめて削除できます。',
         '',
         '### /forum placeholders',
         'フォーラム通知メッセージで使えるプレースホルダ一覧を表示します。',
+        '',
+        '主なプレースホルダ:',
+        '・`{forum}` → フォーラムメンション',
+        '・`{forumName}` → フォーラム名',
+        '・`{thread}` → スレッド名',
+        '・`{author}` → スレ主メンション',
+        '・`{newcomerMark}` → ご新規さんの場合だけ 🔰 を表示',
+        '・`{link}` → スレッドURL',
+        '',
+        'ご新規さん判定:',
+        `・サーバー参加から ${NEWCOMER_DAYS} 日以内のメンバーに 🔰 を表示します。`,
         '',
         '---',
         '',
@@ -335,12 +423,15 @@ function buildHelpLines() {
         '### /rolemention set',
         'ロールメンション転載設定を追加します。',
         '',
-        '例:',
+        '使用例:',
         '`/rolemention set role:@対象ロール target_channel:#転載先`',
+        '',
+        'カスタムメッセージを指定する例:',
+        '`/rolemention set role:@対象ロール target_channel:#転載先 message:送信主：{author}\\n{body_quote}\\n{link}`',
         '',
         '### /rolemention show',
         '現在のロールメンション転載設定を表示します。',
-        '消えている転載先がある場合は、一括削除または個別削除できます。',
+        '消えている転載先がある場合は、一括削除または個別削除ができます。',
         '',
         '### /rolemention unset',
         '指定ロールの転載設定を削除します。',
@@ -348,15 +439,23 @@ function buildHelpLines() {
         '### /rolemention placeholders',
         'ロールメンション転載メッセージで使えるプレースホルダ一覧を表示します。',
         '',
+        '主なプレースホルダ:',
+        '・`{author}` → 送信者メンション',
+        '・`{roles}` → メンションされたロール一覧',
+        '・`{channel}` → 元チャンネルメンション',
+        '・`{link}` → 元メッセージリンク',
+        '・`{body}` → 本文そのまま',
+        '・`{body_quote}` → 引用形式の本文',
+        '',
         '---',
         '',
         '## /reaction',
         '指定チャンネルで、指定ユーザーの投稿に自動リアクションを付けます。',
         '',
         '### /reaction set',
-        '自動リアクション設定を追加します。',
+        '自動リアクション設定を追加または更新します。',
         '',
-        '例:',
+        '使用例:',
         '`/reaction set target_channel:#対象チャンネル user:@対象ユーザー emoji:✅`',
         '',
         '### /reaction show',
@@ -365,46 +464,90 @@ function buildHelpLines() {
         '### /reaction unset',
         '自動リアクション設定を削除します。',
         '',
-        '### /reaction allowbot add/show/remove',
-        'Bot投稿も自動リアクション対象にしたい場合、許可Botを管理します。',
+        '### /reaction allowbot add',
+        'Bot投稿も自動リアクション対象にしたい場合、対象Botを許可します。',
+        '',
+        '使用例:',
+        '`/reaction allowbot add user:@Bot`',
+        '',
+        '### /reaction allowbot show',
+        '自動リアクション対象として許可されているBot一覧を表示します。',
+        '',
+        '### /reaction allowbot remove',
+        '自動リアクション対象からBotを外します。',
         '',
         '---',
         '',
         '## /forward',
-        '特定チャンネルの投稿を、Webhookを使って別チャンネルへ転送します。',
-        '別サーバーへの転送も可能です。',
+        'Webhookを使って、投稿を別チャンネルや別サーバーへ転送します。',
+        '投稿者名とアイコンを元投稿者風にして転送できます。',
+        '転送時のメンション通知は飛ばさない設定です。',
         '',
         '### /forward set',
-        '転送元チャンネルと転送先Webhook URLを登録します。',
+        '転送設定を追加します。',
         '',
-        '例:',
-        '`/forward set source_channel:#転送元 target_webhook_url:https://discord.com/api/webhooks/...`',
+        '特定チャンネルだけ転送する例:',
+        '`/forward set target_webhook_url:https://discord.com/api/webhooks/... source_channel:#転送元`',
+        '',
+        'サーバー全体を転送する例:',
+        '`/forward set target_webhook_url:https://discord.com/api/webhooks/...`',
+        '',
+        'source_channel を指定しない場合、そのサーバー全体の投稿が転送対象になります。',
         '',
         '### /forward show',
-        '転送設定、許可Bot、許可Webhookをまとめて表示します。',
+        '現在の転送設定、許可Bot、許可Webhookをまとめて表示します。',
         '',
         '### /forward unset',
-        '転送先Webhook URLの設定を削除します。',
+        '転送設定を削除します。',
+        '',
+        '特定チャンネルの転送設定を削除する例:',
+        '`/forward unset target_webhook_url:https://discord.com/api/webhooks/... source_channel:#転送元`',
+        '',
+        'サーバー全体転送の設定を削除する例:',
+        '`/forward unset target_webhook_url:https://discord.com/api/webhooks/...`',
+        '',
+        '### /forward exclude add',
+        'サーバー全体転送から除外するチャンネルを追加します。',
+        '',
+        '使用例:',
+        '`/forward exclude add channel:#除外したいチャンネル`',
+        '',
+        '### /forward exclude show',
+        'サーバー全体転送から除外されているチャンネル一覧を表示します。',
+        '',
+        '### /forward exclude remove',
+        'サーバー全体転送の除外チャンネルから削除します。',
+        '',
+        '使用例:',
+        '`/forward exclude remove channel:#除外解除したいチャンネル`',
         '',
         '### /forward allow add',
-        '転送を許可するBotまたはWebhookを追加します。',
+        '転送対象にするBotまたはWebhookを許可します。',
         '',
-        '例:',
-        '`/forward allow add source_channel:#転送元 type:webhook id:1520969045063405628`',
-        '`/forward allow add source_channel:#転送元 type:bot id:123456789012345678`',
+        '特定チャンネルで許可する例:',
+        '`/forward allow add type:bot id:123456789012345678 source_channel:#転送元`',
+        '`/forward allow add type:webhook id:123456789012345678 source_channel:#転送元`',
+        '',
+        'サーバー全体で許可する例:',
+        '`/forward allow add type:bot id:123456789012345678`',
+        '`/forward allow add type:webhook id:123456789012345678`',
         '',
         '### /forward allow remove',
-        '転送許可対象を削除します。',
+        '転送許可対象からBotまたはWebhookを削除します。',
         '',
-        '例:',
-        '`/forward allow remove source_channel:#転送元 type:webhook id:1520969045063405628`',
+        '使用例:',
+        '`/forward allow remove type:bot id:123456789012345678 source_channel:#転送元`',
         '',
         '### 転送仕様',
         '・人間の投稿はそのまま転送対象になります。',
         '・Bot投稿は、許可Botに登録されている場合だけ転送されます。',
         '・Webhook投稿は、許可Webhookに登録されている場合だけ転送されます。',
-        '・転送時のメンション通知は飛ばさない設定です。',
-        '・添付ファイルはWebhook転送で一緒に送信できます。',
+        '・source_channel 未指定の /forward set は、サーバー全体転送として扱います。',
+        '・/forward exclude は、サーバー全体転送にだけ効きます。',
+        '・特定チャンネル転送とサーバー全体転送の両方がある場合、同じWebhook URLは重複送信しないように処理されます。',
+        '・添付ファイルも一緒に転送できます。',
+        '・転送本文の最後に元投稿へのリンクを追加します。',
+        '・カスタム絵文字は可能な範囲で転送先でも表示できる形式に変換します。',
         '',
         '---',
         '',
@@ -414,35 +557,59 @@ function buildHelpLines() {
         '### /role missing list',
         '指定ロールを持っていないメンバー一覧を表示します。',
         '',
+        '使用例:',
+        '`/role missing list role:@対象ロール`',
+        '',
         '### /role missing mention',
         '指定ロールを持っていないメンバーのコピペ用メンションを表示します。',
+        '',
+        '使用例:',
+        '`/role missing mention role:@対象ロール`',
         '',
         '### /role channelnever list',
         '指定ロールを持っておらず、指定チャンネルで一度も発言していないメンバーを表示します。',
         '',
+        '使用例:',
+        '`/role channelnever list role:@対象ロール source_channel:#確認チャンネル`',
+        '',
         '### /role channelnever mention',
         '上記条件に当てはまるメンバーのコピペ用メンションを表示します。',
         '',
+        '使用例:',
+        '`/role channelnever mention role:@対象ロール source_channel:#確認チャンネル`',
+        '',
         '### /role filter list',
-        'あるロールを持ち、別のロールを持っていないメンバーを表示します。',
+        'あるロールを持ち、別のロールを持っていないメンバー一覧を表示します。',
+        '',
+        '使用例:',
+        '`/role filter list has:@持っているロール not:@持っていないロール`',
         '',
         '### /role filter mention',
         '上記条件に当てはまるメンバーのコピペ用メンションを表示します。',
+        '',
+        '使用例:',
+        '`/role filter mention has:@持っているロール not:@持っていないロール`',
         '',
         '---',
         '',
         '## /hasrole',
         '指定したロールを持っているメンバー一覧を表示します。',
         '',
-        '例:',
+        '### /hasrole list',
+        '指定ロールを持っているメンバーを表示します。',
+        '',
+        '使用例:',
         '`/hasrole list role:@対象ロール`',
         '',
         '---',
         '',
         '## 注意',
-        '・管理系コマンドは基本的にサーバー管理権限を持つ人向けです。',
         '・Webhook URLは秘密情報です。公開チャンネルやGitHubなどに貼らないでください。',
         '・転送ループを防ぐため、このBot自身の投稿は転送しません。',
+        '・Bot投稿やWebhook投稿を転送したい場合は、/forward allow add で許可してください。',
+        '・サーバー全体転送を使う場合、不要なチャンネルは /forward exclude add で除外してください。',
+        '・VC内チャットは環境や権限によって取得できない場合があります。',
+        '・多くの設定表示で、消えているチャンネルや設定が見つかった場合は、一括削除または個別削除できます。',
     ];
 }
 
@@ -1024,24 +1191,7 @@ async function main() {
 
                 if (sub === 'placeholders') {
                     await interaction.reply({
-                        content:
-                            '## カスタムメッセージで使えるプレースホルダ一覧\n' +
-                            '・`{forum}` → フォーラムメンション\n' +
-                            '・`{forumName}` → フォーラム名\n' +
-                            '・`{thread}` → スレッド名\n' +
-                            '・`{author}` → スレ主メンション\n' +
-              '・`{newcomerMark}` → ご新規さんの場合だけ 🔰 を表示\\n' +
-                            '・`{link}` → スレッドURL\n' +
-                            '\n' +
-                            '## 改行の書き方\n' +
-                            '改行したい場合は `\\n` を使ってください。\n' +
-                            '\n' +
-                            '## 例\n' +
-                            '```txt\n' +
-                            '{forum} に新しいスレッドが作成されました！\\n' +
-                            'スレ主: {author}\\n' +
-                            'リンク: [{thread}]({link})\n' +
-                            '```',
+                        content: buildForumPlaceholdersHelp(),
                         ephemeral: true,
                     });
                     return;
@@ -1274,25 +1424,7 @@ async function main() {
 
                 if (sub === 'placeholders') {
                     await interaction.reply({
-                        content:
-                            '## ロールメンション転載で使えるプレースホルダ一覧\n' +
-                            '・`{author}` → 送信者メンション\n' +
-                            '・`{roles}` → メンションされたロール一覧\n' +
-                            '・`{channel}` → 元チャンネルメンション\n' +
-                            '・`{link}` → 元メッセージリンク\n' +
-                            '・`{body}` → 本文そのまま\n' +
-                            '・`{body_quote}` → 引用形式の本文\n' +
-                            '\n' +
-                            '## 改行の書き方\n' +
-                            '改行したい場合は `\\n` を使ってください。\n' +
-                            '\n' +
-                            '## 例\n' +
-                            '```txt\n' +
-                            '送信主：{author}\\n' +
-                            '{body_quote}\\n' +
-                            '# {channel}\\n' +
-                            '{link}\n' +
-                            '```',
+                        content: buildRoleMentionPlaceholdersHelp(),
                         ephemeral: true,
                     });
                     return;
@@ -1735,48 +1867,7 @@ async function main() {
                 }
             }
 
-            // =========================================================
-            // /hasrole 系
-            // =========================================================
-            if (interaction.commandName === 'hasrole') {
-                const sub = interaction.options.getSubcommand();
 
-                if (sub === 'list') {
-                    const targetRole = interaction.options.getRole('role', true);
-                    await interaction.guild.members.fetch();
-
-                    const membersWithRole = interaction.guild.members.cache.filter(
-                        (member) => !member.user.bot && member.roles.cache.has(targetRole.id),
-                    );
-
-                    if (membersWithRole.size === 0) {
-                        await interaction.reply({
-                            content: `ロール <@&${targetRole.id}> を持っているメンバーはいません。`,
-                            ephemeral: true,
-                        });
-                        return;
-                    }
-
-                    const lines = membersWithRole.map((member) => `・${member.user.tag} (<@${member.id}>)`);
-                    const chunks = splitLinesToMessages(
-                        `ロール <@&${targetRole.id}> を持っているメンバー一覧:\n`,
-                        lines,
-                    );
-
-                    await interaction.reply({
-                        content: chunks[0],
-                        ephemeral: true,
-                    });
-
-                    for (let i = 1; i < chunks.length; i++) {
-                        await interaction.followUp({
-                            content: chunks[i],
-                            ephemeral: true,
-                        });
-                    }
-                    return;
-                }
-            }
 
             // =========================================================
             // /forward 系
@@ -1888,7 +1979,7 @@ async function main() {
                                 content:
                                     `転送許可Botを追加しました。\n` +
                                     `転送元: ${sourceChannel ? `<#${sourceChannel.id}>` : 'サーバー全体'}\n`
-                                    `Bot ID: ${id}`,
+                                        `Bot ID: ${id}`,
                                 ephemeral: true,
                             });
                             return;
@@ -2148,6 +2239,79 @@ async function main() {
                     });
                     return;
                 }
+            }
+
+            //ここから誰でも使えるコマンド
+
+            // =========================================================
+            // /hasrole 系
+            // =========================================================
+            if (interaction.commandName === 'hasrole') {
+                const sub = interaction.options.getSubcommand();
+
+                if (sub === 'list') {
+                    const targetRole = interaction.options.getRole('role', true);
+                    await interaction.guild.members.fetch();
+
+                    const membersWithRole = interaction.guild.members.cache.filter(
+                        (member) => !member.user.bot && member.roles.cache.has(targetRole.id),
+                    );
+
+                    if (membersWithRole.size === 0) {
+                        await interaction.reply({
+                            content: `ロール <@&${targetRole.id}> を持っているメンバーはいません。`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    const lines = membersWithRole.map((member) => `・${member.user.tag} (<@${member.id}>)`);
+                    const chunks = splitLinesToMessages(
+                        `ロール <@&${targetRole.id}> を持っているメンバー一覧:\n`,
+                        lines,
+                    );
+
+                    await interaction.reply({
+                        content: chunks[0],
+                        ephemeral: true,
+                    });
+
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({
+                            content: chunks[i],
+                            ephemeral: true,
+                        });
+                    }
+                    return;
+                }
+            }
+
+            // =========================================================
+            // /joined 系
+            // 自分がサーバーに参加してからの日数を表示
+            // =========================================================
+            if (interaction.commandName === 'joined') {
+                const member = await interaction.guild.members
+                    .fetch(interaction.user.id)
+                    .catch(() => interaction.member ?? null);
+
+                const joinedInfo = buildJoinedDaysInfo(member);
+
+                if (!joinedInfo) {
+                    await interaction.reply({
+                        content: 'サーバー参加日の取得に失敗しました。',
+                        ephemeral: true,
+                    });
+                    return;
+                }
+
+                await interaction.reply({
+                    content:
+                        `あなたはこのサーバーに参加してから **${joinedInfo.daysSinceJoin}日** 経っています。\n` +
+                        `参加日: ${joinedInfo.joinedAtText}`,
+                    ephemeral: true,
+                });
+                return;
             }
 
         } catch (error) {

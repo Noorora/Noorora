@@ -343,22 +343,6 @@ const commands = [
         .toJSON(),
 
     new SlashCommandBuilder()
-        .setName('hasrole')
-        .setDescription('指定したロールを持っているメンバーを表示します')
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('list')
-                .setDescription('指定したロールを持っているメンバー一覧を表示します')
-                .addRoleOption((option) =>
-                    option
-                        .setName('role')
-                        .setDescription('持っているメンバーを表示したいロール')
-                        .setRequired(true),
-                ),
-        )
-        .toJSON(),
-
-    new SlashCommandBuilder()
         .setName('forward')
         .setDescription('特定チャンネルの書き込み転送設定を管理します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
@@ -546,6 +530,30 @@ const commands = [
                     ),
             )
         )
+        .toJSON(),
+
+
+
+
+        //ここから誰でも使えるコマンド
+    new SlashCommandBuilder()
+        .setName('hasrole')
+        .setDescription('指定したロールを持っているメンバーを表示します')
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('list')
+                .setDescription('指定したロールを持っているメンバー一覧を表示します')
+                .addRoleOption((option) =>
+                    option
+                        .setName('role')
+                        .setDescription('持っているメンバーを表示したいロール')
+                        .setRequired(true),
+                ),
+        )
+        .toJSON(),
+    new SlashCommandBuilder()
+        .setName('joined')
+        .setDescription('自分がこのサーバーに参加してからの日数を表示します')
         .toJSON(),
 ];
 
