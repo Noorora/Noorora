@@ -412,6 +412,12 @@ const commands = [
             subcommand
                 .setName('set')
                 .setDescription('転送設定を追加または更新します')
+                .addStringOption((option) =>
+                    option
+                        .setName('target_webhook_url')
+                        .setDescription('転送先チャンネルのWebhook URL')
+                        .setRequired(true),
+                )
                 .addChannelOption((option) =>
                     option
                         .setName('source_channel')
@@ -424,12 +430,6 @@ const commands = [
                             ChannelType.AnnouncementThread,
                         )
                         .setRequired(false),
-                )
-                .addStringOption((option) =>
-                    option
-                        .setName('target_webhook_url')
-                        .setDescription('転送先チャンネルのWebhook URL')
-                        .setRequired(true),
                 ),
         )
         .addSubcommand((subcommand) =>
@@ -441,20 +441,26 @@ const commands = [
             subcommand
                 .setName('unset')
                 .setDescription('転送設定を削除します')
-                .addChannelOption((option) =>
-                    option
-                        .setName('source_channel')
-                        .setDescription('転送元チャンネル')
-                        .addChannelTypes(ChannelType.GuildText)
-                        .setRequired(false),
-                )
                 .addStringOption((option) =>
                     option
                         .setName('target_webhook_url')
                         .setDescription('削除したいWebhook URL')
                         .setRequired(true),
+                )
+                .addChannelOption((option) =>
+                    option
+                        .setName('source_channel')
+                        .setDescription('転送元チャンネル。未指定ならサーバー全体の転送設定を削除します')
+                        .addChannelTypes(
+                            ChannelType.GuildText,
+                            ChannelType.GuildAnnouncement,
+                            ChannelType.PublicThread,
+                            ChannelType.PrivateThread,
+                            ChannelType.AnnouncementThread,
+                        )
+                        .setRequired(false),
                 ),
-    )
+        )
         .addSubcommandGroup((group) =>
             group
                 .setName('allow')
@@ -463,58 +469,70 @@ const commands = [
                     subcommand
                         .setName('add')
                         .setDescription('転送許可対象を追加します')
+                        .addStringOption((option) =>
+                            option
+                                .setName('type')
+                                .setDescription('許可対象の種類')
+                                .setRequired(true)
+                                .addChoices(
+                                    { name: 'bot', value: 'bot' },
+                                    { name: 'webhook', value: 'webhook' },
+                                ),
+                        )
+                        .addStringOption((option) =>
+                            option
+                                .setName('id')
+                                .setDescription('Bot ID または Webhook ID')
+                                .setRequired(true),
+                        )
                         .addChannelOption((option) =>
                             option
                                 .setName('source_channel')
                                 .setDescription('転送元チャンネル。未指定ならサーバー全体の許可対象にします')
-                                .addChannelTypes(ChannelType.GuildText)
+                                .addChannelTypes(
+                                    ChannelType.GuildText,
+                                    ChannelType.GuildAnnouncement,
+                                    ChannelType.PublicThread,
+                                    ChannelType.PrivateThread,
+                                    ChannelType.AnnouncementThread,
+                                )
                                 .setRequired(false),
-                        )
-                        .addStringOption((option) =>
-                            option
-                                .setName('type')
-                                .setDescription('許可対象の種類')
-                                .setRequired(true)
-                                .addChoices(
-                                    { name: 'bot', value: 'bot' },
-                                    { name: 'webhook', value: 'webhook' },
-                                ),
-                        )
-                        .addStringOption((option) =>
-                            option
-                                .setName('id')
-                                .setDescription('Bot ID または Webhook ID')
-                                .setRequired(true),
                         ),
-                )
+            )
                 .addSubcommand((subcommand) =>
-                    subcommand
-                        .setName('remove')
-                        .setDescription('転送許可対象を削除します')
-                        .addChannelOption((option) =>
-                            option
-                                .setName('source_channel')
-                                .setDescription('転送元チャンネル')
-                                .addChannelTypes(ChannelType.GuildText)
-                                .setRequired(true),
-                        )
-                        .addStringOption((option) =>
-                            option
-                                .setName('type')
-                                .setDescription('許可対象の種類')
-                                .setRequired(true)
-                                .addChoices(
-                                    { name: 'bot', value: 'bot' },
-                                    { name: 'webhook', value: 'webhook' },
-                                ),
-                        )
-                        .addStringOption((option) =>
-                            option
-                                .setName('id')
-                                .setDescription('Bot ID または Webhook ID')
-                                .setRequired(true),
-                        ),
-                ),
+                subcommand
+                    .setName('remove')
+                    .setDescription('転送許可対象を削除します')
+                    .addStringOption((option) =>
+                        option
+                            .setName('type')
+                            .setDescription('許可対象の種類')
+                            .setRequired(true)
+                            .addChoices(
+                                { name: 'bot', value: 'bot' },
+                                { name: 'webhook', value: 'webhook' },
+                            ),
+                    )
+                    .addStringOption((option) =>
+                        option
+                            .setName('id')
+                            .setDescription('Bot ID または Webhook ID')
+                            .setRequired(true),
+                    )
+                    .addChannelOption((option) =>
+                        option
+                            .setName('source_channel')
+                            .setDescription('転送元チャンネル。未指定ならサーバー全体の許可対象から削除します')
+                            .addChannelTypes(
+                                ChannelType.GuildText,
+                                ChannelType.GuildAnnouncement,
+                                ChannelType.PublicThread,
+                                ChannelType.PrivateThread,
+                                ChannelType.AnnouncementThread,
+                            )
+                            .setRequired(false),
+                    ),
+            )
         )
         .toJSON(),
 ];
