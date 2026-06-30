@@ -369,9 +369,15 @@ const commands = [
                 .addChannelOption((option) =>
                     option
                         .setName('source_channel')
-                        .setDescription('転送元チャンネル')
-                        .addChannelTypes(ChannelType.GuildText)
-                        .setRequired(true),
+                        .setDescription('転送元チャンネル。未指定ならサーバー全体を転送します')
+                        .addChannelTypes(
+                            ChannelType.GuildText,
+                            ChannelType.GuildAnnouncement,
+                            ChannelType.PublicThread,
+                            ChannelType.PrivateThread,
+                            ChannelType.AnnouncementThread,
+                        )
+                        .setRequired(false),
                 )
                 .addStringOption((option) =>
                     option
@@ -394,7 +400,7 @@ const commands = [
                         .setName('source_channel')
                         .setDescription('転送元チャンネル')
                         .addChannelTypes(ChannelType.GuildText)
-                        .setRequired(true),
+                        .setRequired(false),
                 )
                 .addStringOption((option) =>
                     option
@@ -414,9 +420,9 @@ const commands = [
                         .addChannelOption((option) =>
                             option
                                 .setName('source_channel')
-                                .setDescription('転送元チャンネル')
+                                .setDescription('転送元チャンネル。未指定ならサーバー全体の許可対象にします')
                                 .addChannelTypes(ChannelType.GuildText)
-                                .setRequired(true),
+                                .setRequired(false),
                         )
                         .addStringOption((option) =>
                             option
@@ -464,7 +470,6 @@ const commands = [
                         ),
                 ),
         )
-
         .toJSON(),
 ];
 
