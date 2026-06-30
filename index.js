@@ -710,19 +710,6 @@ async function main() {
         console.log(`ログイン完了: ${readyClient.user.tag}`);
     });
 
-    client.on('raw', (packet) => {
-        if (packet.t !== 'MESSAGE_CREATE') return;
-
-        console.log(
-            '[raw MESSAGE_CREATE]',
-            'guild=', packet.d?.guild_id,
-            'channel=', packet.d?.channel_id,
-            'author=', packet.d?.author?.username,
-            'content=', packet.d?.content,
-        );
-    });
-    ``
-
     client.on(Events.InteractionCreate, async (interaction) => {
         if (interaction.isButton()) {
             try {
@@ -2347,7 +2334,9 @@ async function main() {
             if (uniqueWebhookUrls.length === 0) return;
 
             let body = message.content?.trim() || '';
-            body = toPlainCustomEmojiText(body);
+
+            // 鯖絵文字を <:name:id> / <a:name:id> に変換する
+            body = await normalizeCustomEmojiText(message, body);
 
             // 常に最後に元投稿リンクを追加
             body = `${body}${body ? '\n' : ''}[<元投稿へ>](${message.url})`;
