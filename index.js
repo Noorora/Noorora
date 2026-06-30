@@ -173,8 +173,6 @@ async function normalizeCustomEmojiText(message, text) {
 async function normalizeCustomEmojiText(message, text) {
     if (!text || !message.guild) return text;
 
-    const emojiNamePattern = /:([a-zA-Z0-9_]+|[^\s:<>]+):/g;
-
     let guildEmojis;
     try {
         guildEmojis = await message.guild.emojis.fetch();
@@ -183,29 +181,43 @@ async function normalizeCustomEmojiText(message, text) {
         return text;
     }
 
-    return text.replace(emojiNamePattern, (match, emojiName) => {
-        const emoji = guildEmojis.find((item) => item.name === emojiName);
+    return text
+        // すでに <:name:id> / <a:name:id> 形式になっているものを処理
+        .replace(/<a?:([^:<>]+):(\d{17,20})>/g, (match, emojiName) => {
+            // 名前が英数字・アンダースコア以外なら、ID付き形式にしない
+            // 例: <:🐱:1518208681177780354> → 🐱
+            if (!/^[a-zA-Z0-9_]+$/.test(emojiName)) {
+                console.log(`[emoji normalize] unsafe custom emoji name: ${match} -> ${emojiName}`);
+                return emojiName;
+            }
 
-        if (!emoji) {
-            console.log(`[emoji normalize] not found: ${emojiName}`);
             return match;
-        }
+        })
 
-        // 絵文字名が英数字・アンダースコア以外を含む場合、
-        // <:name:id> 形式にすると余計なIDが見えることがあるため、絵文字名だけ返す
-        if (!/^[a-zA-Z0-9_]+$/.test(emoji.name)) {
-            console.log(`[emoji normalize] unicode-like name: ${match} -> ${emoji.name}`);
-            return emoji.name;
-        }
+        // :name: 形式を処理
+        .replace(/:([^:\s<>]+):/g, (match, emojiName) => {
+            const emoji = guildEmojis.find((item) => item.name === emojiName);
 
-        const converted = emoji.animated
-            ? `<a:${emoji.name}:${emoji.id}>`
-            : `<:${emoji.name}:${emoji.id}>`;
+            if (!emoji) {
+                console.log(`[emoji normalize] not found: ${emojiName}`);
+                return match;
+            }
 
-        console.log(`[emoji normalize] ${match} -> ${converted}`);
+            // ここが重要
+            // 絵文字名が 🐱 みたいな場合は <:🐱:id> にせず、絵文字だけ返す
+            if (!/^[a-zA-Z0-9_]+$/.test(emoji.name)) {
+                console.log(`[emoji normalize] emoji-name only: ${match} -> ${emoji.name}`);
+                return emoji.name;
+            }
 
-        return converted;
-    });
+            const converted = emoji.animated
+                ? `<a:${emoji.name}:${emoji.id}>`
+                : `<:${emoji.name}:${emoji.id}>`;
+
+            console.log(`[emoji normalize] ${match} -> ${converted}`);
+
+            return converted;
+        });
 }
 
 function toPlainCustomEmojiText(text) {
