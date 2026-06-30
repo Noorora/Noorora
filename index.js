@@ -155,23 +155,42 @@ async function normalizeCustomEmojiText(message, text) {
     });
 }
 
-function splitBySpaceToMessages(header, items, maxLength = 1800) {
-    const chunks = [];
-    let current = header;
+async function normalizeCustomEmojiText(message, text) {
+    if (!text || !message.guild) return text;
 
-    for (const item of items) {
-        if ((current + item + ' ').length > maxLength) {
-            chunks.push(current.trimEnd());
-            current = '';
+    const emojiNamePattern = /:([a-zA-Z0-9_]+|[^\s:<>]+):/g;
+
+    let guildEmojis;
+    try {
+        guildEmojis = await message.guild.emojis.fetch();
+    } catch (error) {
+        console.warn('絵文字一覧の取得に失敗:', error);
+        return text;
+    }
+
+    return text.replace(emojiNamePattern, (match, emojiName) => {
+        const emoji = guildEmojis.find((item) => item.name === emojiName);
+
+        if (!emoji) {
+            console.log(`[emoji normalize] not found: ${emojiName}`);
+            return match;
         }
-        current += `${item} `;
-    }
 
-    if (current.trim()) {
-        chunks.push(current.trimEnd());
-    }
+        // 絵文字名が英数字・アンダースコア以外を含む場合、
+        // <:name:id> 形式にすると余計なIDが見えることがあるため、絵文字名だけ返す
+        if (!/^[a-zA-Z0-9_]+$/.test(emoji.name)) {
+            console.log(`[emoji normalize] unicode-like name: ${match} -> ${emoji.name}`);
+            return emoji.name;
+        }
 
-    return chunks;
+        const converted = emoji.animated
+            ? `<a:${emoji.name}:${emoji.id}>`
+            : `<:${emoji.name}:${emoji.id}>`;
+
+        console.log(`[emoji normalize] ${match} -> ${converted}`);
+
+        return converted;
+    });
 }
 
 function toPlainCustomEmojiText(text) {
