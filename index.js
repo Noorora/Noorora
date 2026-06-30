@@ -2336,6 +2336,9 @@ async function main() {
             let body = message.content?.trim() || '';
             body = toPlainCustomEmojiText(body);
 
+            // 常に最後に元投稿リンクを追加
+            body = `${body}${body ? '\n' : ''}[<元投稿へ>](${message.url})`;
+
             const files =
                 message.attachments.size > 0
                     ? [...message.attachments.values()].map((attachment) => ({
