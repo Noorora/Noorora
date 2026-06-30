@@ -710,6 +710,19 @@ async function main() {
         console.log(`ログイン完了: ${readyClient.user.tag}`);
     });
 
+    client.on('raw', (packet) => {
+        if (packet.t !== 'MESSAGE_CREATE') return;
+
+        console.log(
+            '[raw MESSAGE_CREATE]',
+            'guild=', packet.d?.guild_id,
+            'channel=', packet.d?.channel_id,
+            'author=', packet.d?.author?.username,
+            'content=', packet.d?.content,
+        );
+    });
+    ``
+
     client.on(Events.InteractionCreate, async (interaction) => {
         if (interaction.isButton()) {
             try {
@@ -2266,17 +2279,6 @@ async function main() {
     // =========================================================
     client.on(Events.MessageCreate, async (message) => {
         try {
-            console.log(
-                '[forward debug]',
-                'guild=', message.guildId,
-                'channel=', message.channelId,
-                'type=', message.channel?.type,
-                'name=', message.channel?.name,
-                'author=', message.author?.tag,
-                'bot=', message.author?.bot,
-                'webhookId=', message.webhookId,
-                'content=', message.content,
-            );
             if (!message.guild) return;
 
             // 自分自身のBot投稿だけ無視
