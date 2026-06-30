@@ -21,6 +21,16 @@ const textOrThreadTypes = [
     ChannelType.AnnouncementThread,
 ];
 
+const forwardSourceChannelTypes = [
+    ChannelType.GuildText,
+    ChannelType.GuildAnnouncement,
+    ChannelType.PublicThread,
+    ChannelType.PrivateThread,
+    ChannelType.AnnouncementThread,
+    ChannelType.GuildVoice,
+    ChannelType.GuildStageVoice,
+];
+
 const commands = [
     new SlashCommandBuilder()
         .setName('help')
@@ -358,15 +368,7 @@ const commands = [
                             option
                                 .setName('channel')
                                 .setDescription('除外するチャンネル')
-                                .addChannelTypes(
-                                    ChannelType.GuildText,
-                                    ChannelType.GuildAnnouncement,
-                                    ChannelType.PublicThread,
-                                    ChannelType.PrivateThread,
-                                    ChannelType.AnnouncementThread,
-                                    ChannelType.GuildVoice,
-                                    ChannelType.GuildStageVoice,
-                                )
+                                .addChannelTypes(...forwardSourceChannelTypes)
                                 .setRequired(true),
                         ),
                 )
@@ -378,15 +380,7 @@ const commands = [
                             option
                                 .setName('channel')
                                 .setDescription('除外解除するチャンネル')
-                                .addChannelTypes(
-                                    ChannelType.GuildText,
-                                    ChannelType.GuildAnnouncement,
-                                    ChannelType.PublicThread,
-                                    ChannelType.PrivateThread,
-                                    ChannelType.AnnouncementThread,
-                                    ChannelType.GuildVoice,
-                                    ChannelType.GuildStageVoice,
-                                )
+                                .addChannelTypes(...forwardSourceChannelTypes)
                                 .setRequired(true),
                         ),
                 )
@@ -410,15 +404,7 @@ const commands = [
                     option
                         .setName('source_channel')
                         .setDescription('転送元チャンネル。未指定ならサーバー全体を転送します')
-                        .addChannelTypes(
-                            ChannelType.GuildText,
-                            ChannelType.GuildAnnouncement,
-                            ChannelType.PublicThread,
-                            ChannelType.PrivateThread,
-                            ChannelType.AnnouncementThread,
-                            ChannelType.GuildVoice,
-                            ChannelType.GuildStageVoice,
-                        )
+                        .addChannelTypes(...forwardSourceChannelTypes)
                         .setRequired(false),
                 ),
         )
@@ -441,15 +427,7 @@ const commands = [
                     option
                         .setName('source_channel')
                         .setDescription('転送元チャンネル。未指定ならサーバー全体の転送設定を削除します')
-                        .addChannelTypes(
-                            ChannelType.GuildText,
-                            ChannelType.GuildAnnouncement,
-                            ChannelType.PublicThread,
-                            ChannelType.PrivateThread,
-                            ChannelType.AnnouncementThread,
-                            ChannelType.GuildVoice,
-                            ChannelType.GuildStageVoice,
-                        )
+                        .addChannelTypes(...forwardSourceChannelTypes)
                         .setRequired(false),
                 ),
         )
@@ -481,61 +459,41 @@ const commands = [
                             option
                                 .setName('source_channel')
                                 .setDescription('転送元チャンネル。未指定ならサーバー全体の許可対象にします')
-                                .addChannelTypes(
-                                    ChannelType.GuildText,
-                                    ChannelType.GuildAnnouncement,
-                                    ChannelType.PublicThread,
-                                    ChannelType.PrivateThread,
-                                    ChannelType.AnnouncementThread,
-                                    ChannelType.GuildVoice,
-                                    ChannelType.GuildStageVoice,
-                                )
+                                .addChannelTypes(...forwardSourceChannelTypes)
                                 .setRequired(false),
                         ),
-            )
+                )
                 .addSubcommand((subcommand) =>
-                subcommand
-                    .setName('remove')
-                    .setDescription('転送許可対象を削除します')
-                    .addStringOption((option) =>
-                        option
-                            .setName('type')
-                            .setDescription('許可対象の種類')
-                            .setRequired(true)
-                            .addChoices(
-                                { name: 'bot', value: 'bot' },
-                                { name: 'webhook', value: 'webhook' },
-                            ),
-                    )
-                    .addStringOption((option) =>
-                        option
-                            .setName('id')
-                            .setDescription('Bot ID または Webhook ID')
-                            .setRequired(true),
-                    )
-                    .addChannelOption((option) =>
-                        option
-                            .setName('source_channel')
-                            .setDescription('転送元チャンネル。未指定ならサーバー全体の許可対象から削除します')
-                            .addChannelTypes(
-                                ChannelType.GuildText,
-                                ChannelType.GuildAnnouncement,
-                                ChannelType.PublicThread,
-                                ChannelType.PrivateThread,
-                                ChannelType.AnnouncementThread,
-                                ChannelType.GuildVoice,
-                                ChannelType.GuildStageVoice,
-                            )
-                            .setRequired(false),
-                    ),
-            )
+                    subcommand
+                        .setName('remove')
+                        .setDescription('転送許可対象を削除します')
+                        .addStringOption((option) =>
+                            option
+                                .setName('type')
+                                .setDescription('許可対象の種類')
+                                .setRequired(true)
+                                .addChoices(
+                                    { name: 'bot', value: 'bot' },
+                                    { name: 'webhook', value: 'webhook' },
+                                ),
+                        )
+                        .addStringOption((option) =>
+                            option
+                                .setName('id')
+                                .setDescription('Bot ID または Webhook ID')
+                                .setRequired(true),
+                        )
+                        .addChannelOption((option) =>
+                            option
+                                .setName('source_channel')
+                                .setDescription('転送元チャンネル。未指定ならサーバー全体の許可対象から削除します')
+                                .addChannelTypes(...forwardSourceChannelTypes)
+                                .setRequired(false),
+                        ),
+                ),
         )
         .toJSON(),
 
-
-
-
-        //ここから誰でも使えるコマンド
     new SlashCommandBuilder()
         .setName('hasrole')
         .setDescription('指定したロールを持っているメンバーを表示します')
@@ -551,6 +509,7 @@ const commands = [
                 ),
         )
         .toJSON(),
+
     new SlashCommandBuilder()
         .setName('joined')
         .setDescription('自分がこのサーバーに参加してからの日数を表示します')
