@@ -90,6 +90,7 @@ function forwardExcludeChannelsKey(guildId) {
 }
 
 const FORWARD_ALL_CHANNELS = '__all__';
+const NEWCOMER_DAYS = 7;
 
 // ===== 長文分割用 =====
 function splitLinesToMessages(header, lines, maxLength = 1900) {
@@ -177,14 +178,11 @@ async function normalizeCustomEmojiText(message, text) {
     try {
         guildEmojis = await message.guild.emojis.fetch();
     } catch (error) {
-        console.warn('絵文字一覧の取得に失敗:', error);
         return text;
     }
 
     return text.replace(
-        /<a?:([a-zA-Z0-9_]+):(\d{17,20})>|:([a-zA-Z0-9_]+):/g,
         (match, existingEmojiName, existingEmojiId, shortEmojiName) => {
-            // すでに <:name:id> / <a:name:id> 形式なら絶対に再変換しない
             if (existingEmojiName && existingEmojiId) {
                 return match;
             }
@@ -193,7 +191,6 @@ async function normalizeCustomEmojiText(message, text) {
             const emoji = guildEmojis.find((item) => item.name === emojiName);
 
             if (!emoji) {
-                console.log(`[emoji normalize] not found: ${emojiName}`);
                 return match;
             }
 
@@ -201,18 +198,9 @@ async function normalizeCustomEmojiText(message, text) {
                 ? `<a:${emoji.name}:${emoji.id}>`
                 : `<:${emoji.name}:${emoji.id}>`;
 
-            console.log(`[emoji normalize] ${match} -> ${converted}`);
             return converted;
         },
     );
-}
-
-function toPlainCustomEmojiText(text) {
-    if (!text) return text;
-
-    return text
-        .replace(/<a:([a-zA-Z0-9_]+):\d{17,20}>/g, ':$1:')
-        .replace(/<:([a-zA-Z0-9_]+):\d{17,20}>/g, ':$1:');
 }
 
 // ===== 転送先へ送信 =====
@@ -279,7 +267,7 @@ async function collectSpeakerIdsFromChannel(channel) {
 // ===== フォーラム通知テンプレート =====
 const DEFAULT_FORUM_MESSAGE_TEMPLATE =
     '{forum} に、新しいスレッドが作成されました！\\n' +
-    'スレ主: {author}\\n' +
+    'スレ主: {author}{newcomerMark}\\n' +
     'リンク: [{thread}]({link})';
 
 function renderForumMessage(template, data) {
@@ -290,7 +278,19 @@ function renderForumMessage(template, data) {
         .replaceAll('{forumName}', data.forumName)
         .replaceAll('{thread}', data.threadName)
         .replaceAll('{author}', data.authorMention)
+        .replaceAll('{newcomerMark}', data.newcomerMark)
         .replaceAll('{link}', data.threadLink);
+}
+function buildNewcomerMark(member) {
+    if (!member || !member.joinedTimestamp) {
+        return '';
+    }
+
+    const daysSinceJoin = Math.floor(
+        (Date.now() - member.joinedTimestamp) / (1000 * 60 * 60 * 24),
+    );
+
+    return daysSinceJoin <= NEWCOMER_DAYS ? ' 🔰' : '';
 }
 
 // ===== ロールメンション転載テンプレート =====
@@ -1030,6 +1030,7 @@ async function main() {
                             '・`{forumName}` → フォーラム名\n' +
                             '・`{thread}` → スレッド名\n' +
                             '・`{author}` → スレ主メンション\n' +
+              '・`{newcomerMark}` → ご新規さんの場合だけ 🔰 を表示\\n' +
                             '・`{link}` → スレッドURL\n' +
                             '\n' +
                             '## 改行の書き方\n' +
@@ -2206,6 +2207,12 @@ async function main() {
             const forumName = thread.parent.name ?? 'フォーラム';
             const threadName = thread.name ?? '無題';
 
+            const ownerMember = thread.ownerId
+                ? await thread.guild.members.fetch(thread.ownerId).catch(() => null)
+                : null;
+
+            const newcomerMark = buildNewcomerMark(ownerMember);
+
             for (const targetId of targetIds) {
                 const customTemplate = await kv.hGet(forumMessageMapKey(thread.guildId, thread.parentId), targetId);
                 const template = customTemplate || DEFAULT_FORUM_MESSAGE_TEMPLATE;
@@ -2215,6 +2222,7 @@ async function main() {
                     forumName,
                     threadName,
                     authorMention: ownerMention,
+                    newcomerMark,
                     threadLink,
                 });
 
