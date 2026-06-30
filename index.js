@@ -85,6 +85,9 @@ function forwardAllowedBotsKey(guildId, sourceChannelId) {
 function forwardAllowedWebhooksKey(guildId, sourceChannelId) {
     return `forward-allowed-webhooks:${guildId}:${sourceChannelId}`;
 }
+function forwardExcludeChannelsKey(guildId) {
+    return `forward-exclude-channels:${guildId}`;
+}
 
 const FORWARD_ALL_CHANNELS = '__all__';
 
@@ -1749,6 +1752,80 @@ async function main() {
                 const sub = interaction.options.getSubcommand();
 
                 // =========================================================
+                // /forward exclude add/remove/show
+                // 鯖全体転送から除外するチャンネルを管理
+                // =========================================================
+                if (group === 'exclude') {
+                    if (sub === 'add') {
+                        const channel = interaction.options.getChannel('channel', true);
+
+                        await kv.sAdd(
+                            forwardExcludeChannelsKey(interaction.guildId),
+                            channel.id,
+                        );
+
+                        await interaction.reply({
+                            content:
+                                `鯖全体転送の除外チャンネルに追加しました。\n` +
+                                `除外: <#${channel.id}>`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    if (sub === 'remove') {
+                        const channel = interaction.options.getChannel('channel', true);
+
+                        const removed = await kv.sRem(
+                            forwardExcludeChannelsKey(interaction.guildId),
+                            channel.id,
+                        );
+
+                        await interaction.reply({
+                            content: removed
+                                ? `鯖全体転送の除外チャンネルから削除しました。\n解除: <#${channel.id}>`
+                                : `そのチャンネルは除外一覧にありませんでした。\n対象: <#${channel.id}>`,
+                            ephemeral: true,
+                        });
+                        return;
+                    }
+
+                    if (sub === 'show') {
+                        const channelIds = await kv.sMembers(
+                            forwardExcludeChannelsKey(interaction.guildId),
+                        );
+
+                        if (!channelIds || channelIds.length === 0) {
+                            await interaction.reply({
+                                content: '鯖全体転送の除外チャンネルはありません。',
+                                ephemeral: true,
+                            });
+                            return;
+                        }
+
+                        const lines = channelIds.map((id, index) => `${index + 1}. <#${id}> (${id})`);
+
+                        const chunks = splitLinesToMessages(
+                            '鯖全体転送の除外チャンネル一覧:\n',
+                            lines,
+                        );
+
+                        await interaction.reply({
+                            content: chunks[0],
+                            ephemeral: true,
+                        });
+
+                        for (let i = 1; i < chunks.length; i++) {
+                            await interaction.followUp({
+                                content: chunks[i],
+                                ephemeral: true,
+                            });
+                        }
+                        return;
+                    }
+                }
+
+                // =========================================================
                 // /forward allow add/remove
                 // Bot / Webhook の許可対象を統合管理
                 // =========================================================
@@ -2235,9 +2312,17 @@ async function main() {
                 forwardWebhookTargetsKey(message.guildId, message.channelId),
             );
 
-            const serverWebhookUrls = await kv.sMembers(
-                forwardWebhookTargetsKey(message.guildId, FORWARD_ALL_CHANNELS),
+            const excludedChannelIds = await kv.sMembers(
+                forwardExcludeChannelsKey(message.guildId),
             );
+
+            const isExcludedForServerForward = excludedChannelIds.includes(message.channelId);
+
+            const serverWebhookUrls = isExcludedForServerForward
+                ? []
+                : await kv.sMembers(
+                    forwardWebhookTargetsKey(message.guildId, FORWARD_ALL_CHANNELS),
+                );
 
             const webhookUrls = [
                 ...(channelWebhookUrls || []),

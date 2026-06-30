@@ -362,6 +362,52 @@ const commands = [
         .setName('forward')
         .setDescription('特定チャンネルの書き込み転送設定を管理します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .addSubcommandGroup((group) =>
+            group
+                .setName('exclude')
+                .setDescription('鯖全体転送から除外するチャンネルを管理します')
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('add')
+                        .setDescription('除外チャンネルを追加します')
+                        .addChannelOption((option) =>
+                            option
+                                .setName('channel')
+                                .setDescription('除外するチャンネル')
+                                .addChannelTypes(
+                                    ChannelType.GuildText,
+                                    ChannelType.GuildAnnouncement,
+                                    ChannelType.PublicThread,
+                                    ChannelType.PrivateThread,
+                                    ChannelType.AnnouncementThread,
+                                )
+                                .setRequired(true),
+                        ),
+                )
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('remove')
+                        .setDescription('除外チャンネルを削除します')
+                        .addChannelOption((option) =>
+                            option
+                                .setName('channel')
+                                .setDescription('除外解除するチャンネル')
+                                .addChannelTypes(
+                                    ChannelType.GuildText,
+                                    ChannelType.GuildAnnouncement,
+                                    ChannelType.PublicThread,
+                                    ChannelType.PrivateThread,
+                                    ChannelType.AnnouncementThread,
+                                )
+                                .setRequired(true),
+                        ),
+                )
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('show')
+                        .setDescription('除外チャンネル一覧を表示します'),
+                ),
+        )
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('set')
