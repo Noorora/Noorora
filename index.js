@@ -2559,7 +2559,16 @@ async function main() {
                 message.author.globalName ||
                 message.author.username;
 
-            const webhookUsername = `${displayName} | #${message.channel.name}`;
+            const authorMember = message.member ||
+                await message.guild.members.fetch(message.author.id).catch(() => null);
+
+            const newcomerMarkForName = buildNewcomerMark(authorMember).trim();
+
+            const webhookDisplayName = newcomerMarkForName
+                ? `${newcomerMarkForName} ${displayName}`
+                : displayName;
+
+            const webhookUsername = `${webhookDisplayName} | #${message.channel.name}`;
 
             const avatarURL =
                 message.member?.displayAvatarURL({
