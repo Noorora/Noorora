@@ -1,4 +1,7 @@
-const { ChannelType } = require('discord.js');
+const {
+    ChannelType,
+    WebhookClient,
+} = require('discord.js');
 const { ephemeralOptions } = require('../utils/ephemeral');
 
 const allowedTargetTypes = [
@@ -29,27 +32,48 @@ function splitText(text, maxLength = 1800) {
 
     for (const line of text.split('\n')) {
         const next = current ? `${current}\n${line}` : line;
+
         if (next.length > maxLength) {
-            if (current) chunks.push(current);
-            current = line.length > maxLength ? line.slice(0, maxLength) : line;
+            if (current) {
+                chunks.push(current);
+            }
+
+            current = line.length > maxLength
+                ? line.slice(0, maxLength)
+                : line;
         } else {
             current = next;
         }
     }
 
-    if (current.trim()) chunks.push(current);
+    if (current.trim()) {
+        chunks.push(current);
+    }
+
     return chunks;
 }
 
-async function sendLogMessage(targetChannel, text) {
+async function sendLogMessage(targetChannel, webhookClient, text) {
     const chunks = splitText(text);
+
     for (const chunk of chunks) {
-        await targetChannel.send({
-            content: chunk,
-            allowedMentions: {
-                parse: [],
-            },
-        });
+        if (targetChannel) {
+            await targetChannel.send({
+                content: chunk,
+                allowedMentions: {
+                    parse: [],
+                },
+            });
+        } else {
+            await webhookClient.send({
+                content: chunk,
+                allowedMentions: {
+                    parse: [],
+                },
+            });
+        }
+
+        // Discord APIへの連投を少し抑える
         await sleep(250);
     }
 }
@@ -57,23 +81,33 @@ async function sendLogMessage(targetChannel, text) {
 async function fetchAllForumThreads(forumChannel) {
     const threads = new Map();
 
+    // アクティブなスレッドを取得
     const active = await forumChannel.threads.fetchActive().catch(() => null);
+
     if (active?.threads) {
         for (const thread of active.threads.values()) {
             threads.set(thread.id, thread);
         }
     }
 
+    // アーカイブ済みスレッドを取得
     let before;
+
     while (true) {
         const options = {
             type: 'public',
             limit: 100,
         };
-        if (before) options.before = before;
+
+        if (before) {
+            options.before = before;
+        }
 
         const archived = await forumChannel.threads.fetchArchived(options).catch(() => null);
-        if (!archived?.threads || archived.threads.size === 0) break;
+
+        if (!archived?.threads || archived.threads.size === 0) {
+            break;
+        }
 
         for (const thread of archived.threads.values()) {
             threads.set(thread.id, thread);
@@ -84,18 +118,27 @@ async function fetchAllForumThreads(forumChannel) {
             const bTime = b.archiveTimestamp || b.createdTimestamp || 0;
             return aTime - bTime;
         });
+
         const oldestThread = sortedThreads[0];
-        if (!oldestThread) break;
+
+        if (!oldestThread) {
+            break;
+        }
 
         before = oldestThread.archiveTimestamp
             ? new Date(oldestThread.archiveTimestamp)
             : oldestThread.id;
 
-        if (archived.threads.size < 100 || archived.hasMore === false) break;
+        if (archived.threads.size < 100 || archived.hasMore === false) {
+            break;
+        }
+
         await sleep(500);
     }
 
-    return [...threads.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+    return [...threads.values()].sort((a, b) => {
+        return a.createdTimestamp - b.createdTimestamp;
+    });
 }
 
 async function fetchAllMessagesFromThread(thread, includeBots) {
@@ -103,33 +146,56 @@ async function fetchAllMessagesFromThread(thread, includeBots) {
     let before;
 
     while (true) {
-        const options = { limit: 100 };
-        if (before) options.before = before;
+        const options = {
+            limit: 100,
+        };
+
+        if (before) {
+            options.before = before;
+        }
 
         const batch = await thread.messages.fetch(options).catch(() => null);
-        if (!batch || batch.size === 0) break;
+
+        if (!batch || batch.size === 0) {
+            break;
+        }
 
         for (const message of batch.values()) {
-            if (!includeBots && message.author.bot) continue;
+            if (!includeBots && message.author.bot) {
+                continue;
+            }
+
             messages.push(message);
         }
 
         const lastMessage = batch.last();
-        if (!lastMessage) break;
+
+        if (!lastMessage) {
+            break;
+        }
+
         before = lastMessage.id;
 
-        if (batch.size < 100) break;
+        if (batch.size < 100) {
+            break;
+        }
+
         await sleep(350);
     }
 
-    return messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+    return messages.sort((a, b) => {
+        return a.createdTimestamp - b.createdTimestamp;
+    });
 }
 
 function buildMessageLog(thread, message) {
     const authorLabel = `${message.author.tag || message.author.username} (<@${message.author.id}>)`;
     const content = message.content?.trim() || '（本文なし）';
+
     const attachments = message.attachments.size > 0
-        ? [...message.attachments.values()].map((attachment) => `添付: ${attachment.url}`).join('\n')
+        ? [...message.attachments.values()]
+            .map((attachment) => `添付: ${attachment.url}`)
+            .join('\n')
         : '';
 
     return [
@@ -143,20 +209,59 @@ function buildMessageLog(thread, message) {
 
 async function execute(interaction) {
     const sub = interaction.options.getSubcommand();
-    if (sub !== 'archive') return;
 
-    const forumChannel = interaction.options.getChannel('forum', true);
-    const targetChannel = interaction.options.getChannel('target_channel', true);
-    const includeBots = interaction.options.getBoolean('include_bots') ?? false;
-
-    if (forumChannel.type !== ChannelType.GuildForum) {
-        await interaction.reply(ephemeralOptions({ content: 'forum にはフォーラムチャンネルを指定してください。' }));
+    if (sub !== 'archive') {
         return;
     }
 
-    if (!allowedTargetTypes.includes(targetChannel.type) || typeof targetChannel.send !== 'function') {
-        await interaction.reply(ephemeralOptions({ content: 'target_channel にはテキストチャンネルまたはスレッドを指定してください。' }));
+    const forumChannel = interaction.options.getChannel('forum', true);
+    const targetChannel = interaction.options.getChannel('target_channel', false);
+    const targetWebhookUrl = interaction.options.getString('target_webhook_url', false);
+    const includeBots = interaction.options.getBoolean('include_bots') ?? false;
+
+    if (forumChannel.type !== ChannelType.GuildForum) {
+        await interaction.reply(ephemeralOptions({
+            content: 'forum にはフォーラムチャンネルを指定してください。',
+        }));
         return;
+    }
+
+    if (!targetChannel && !targetWebhookUrl) {
+        await interaction.reply(ephemeralOptions({
+            content: 'target_channel または target_webhook_url のどちらかを指定してください。',
+        }));
+        return;
+    }
+
+    if (targetChannel && targetWebhookUrl) {
+        await interaction.reply(ephemeralOptions({
+            content: 'target_channel と target_webhook_url は同時に指定できません。どちらか片方だけ指定してください。',
+        }));
+        return;
+    }
+
+    if (targetChannel) {
+        if (!allowedTargetTypes.includes(targetChannel.type) || typeof targetChannel.send !== 'function') {
+            await interaction.reply(ephemeralOptions({
+                content: 'target_channel にはテキストチャンネルまたはスレッドを指定してください。',
+            }));
+            return;
+        }
+    }
+
+    let webhookClient = null;
+
+    if (targetWebhookUrl) {
+        if (!targetWebhookUrl.startsWith('https://discord.com/api/webhooks/')) {
+            await interaction.reply(ephemeralOptions({
+                content: 'Webhook URL の形式が正しくありません。',
+            }));
+            return;
+        }
+
+        webhookClient = new WebhookClient({
+            url: targetWebhookUrl,
+        });
     }
 
     await interaction.deferReply(ephemeralOptions());
@@ -164,17 +269,22 @@ async function execute(interaction) {
     const startedAt = Date.now();
     const threads = await fetchAllForumThreads(forumChannel);
 
+    const destinationLabel = targetChannel
+        ? `<#${targetChannel.id}>`
+        : 'Webhook URL';
+
     await interaction.editReply({
         content:
             `フォーラムログの出力を開始します。\n` +
             `対象フォーラム: <#${forumChannel.id}>\n` +
-            `ログ送信先: <#${targetChannel.id}>\n` +
+            `ログ送信先: ${destinationLabel}\n` +
             `取得したスレッド数: ${threads.length}\n` +
             `Bot投稿を含める: ${includeBots ? 'はい' : 'いいえ'}`,
     });
 
     await sendLogMessage(
         targetChannel,
+        webhookClient,
         [
             '## フォーラム過去ログ出力開始',
             `対象フォーラム: <#${forumChannel.id}> (${forumChannel.name})`,
@@ -189,13 +299,15 @@ async function execute(interaction) {
 
     for (const thread of threads) {
         processedThreads += 1;
+
         const messages = await fetchAllMessagesFromThread(thread, includeBots);
         totalMessages += messages.length;
 
         await sendLogMessage(
             targetChannel,
+            webhookClient,
             [
-                `---`,
+                '---',
                 `## スレッド: ${thread.name}`,
                 `スレッド: <#${thread.id}>`,
                 `作成日時: ${formatDateTime(thread.createdTimestamp)}`,
@@ -205,10 +317,18 @@ async function execute(interaction) {
         );
 
         if (messages.length === 0) {
-            await sendLogMessage(targetChannel, '（保存対象メッセージなし）');
+            await sendLogMessage(
+                targetChannel,
+                webhookClient,
+                '（保存対象メッセージなし）',
+            );
         } else {
             for (const message of messages) {
-                await sendLogMessage(targetChannel, buildMessageLog(thread, message));
+                await sendLogMessage(
+                    targetChannel,
+                    webhookClient,
+                    buildMessageLog(thread, message),
+                );
             }
         }
 
@@ -226,8 +346,10 @@ async function execute(interaction) {
     }
 
     const finishedAt = Date.now();
+
     await sendLogMessage(
         targetChannel,
+        webhookClient,
         [
             '## フォーラム過去ログ出力完了',
             `対象フォーラム: <#${forumChannel.id}> (${forumChannel.name})`,
@@ -244,7 +366,7 @@ async function execute(interaction) {
             `対象フォーラム: <#${forumChannel.id}>\n` +
             `処理スレッド数: ${processedThreads}\n` +
             `出力メッセージ数: ${totalMessages}\n` +
-            `ログ送信先: <#${targetChannel.id}>`,
+            `ログ送信先: ${destinationLabel}`,
     });
 }
 

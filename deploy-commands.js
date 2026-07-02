@@ -496,12 +496,13 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName('forumlog')
-        .setDescription('フォーラムの過去ログをWebhookへ出力します')
+        .setDescription('フォーラムの過去ログを出力します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('archive')
-                .setDescription('指定フォーラム内の過去ログをWebhookへ出力します')
+                .setDescription('指定フォーラムの過去ログを出力します')
+
                 .addChannelOption((option) =>
                     option
                         .setName('forum')
@@ -509,12 +510,27 @@ const commands = [
                         .addChannelTypes(ChannelType.GuildForum)
                         .setRequired(true),
                 )
+
+                .addChannelOption((option) =>
+                    option
+                        .setName('target_channel')
+                        .setDescription('保存先チャンネル（同じサーバー用）')
+                        .addChannelTypes(
+                            ChannelType.GuildText,
+                            ChannelType.PublicThread,
+                            ChannelType.PrivateThread,
+                            ChannelType.AnnouncementThread,
+                        )
+                        .setRequired(false),
+                )
+
                 .addStringOption((option) =>
                     option
                         .setName('target_webhook_url')
-                        .setDescription('送信先Webhook URL')
-                        .setRequired(true),
+                        .setDescription('保存先Webhook URL（別サーバー用）')
+                        .setRequired(false),
                 )
+
                 .addBooleanOption((option) =>
                     option
                         .setName('include_bots')
@@ -523,6 +539,7 @@ const commands = [
                 ),
         )
         .toJSON(),
+
 
     new SlashCommandBuilder()
         .setName('hasrole')
