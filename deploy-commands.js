@@ -494,38 +494,35 @@ const commands = [
         )
         .toJSON(),
 
-
     new SlashCommandBuilder()
         .setName('forumlog')
-        .setDescription('フォーラムの過去ログを指定チャンネルへ出力します')
+        .setDescription('フォーラムの過去ログをWebhookへ出力します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('archive')
-                .setDescription('指定フォーラム内の過去スレッド・投稿をログチャンネルへ出力します')
+                .setDescription('指定フォーラム内の過去ログをWebhookへ出力します')
                 .addChannelOption((option) =>
                     option
                         .setName('forum')
-                        .setDescription('ログを出力したいフォーラム')
+                        .setDescription('対象フォーラム')
                         .addChannelTypes(ChannelType.GuildForum)
                         .setRequired(true),
                 )
-                .addChannelOption((option) =>
+                .addStringOption((option) =>
                     option
-                        .setName('target_channel')
-                        .setDescription('ログの送信先チャンネルまたはスレッド')
-                        .addChannelTypes(...textOrThreadTypes)
+                        .setName('target_webhook_url')
+                        .setDescription('送信先Webhook URL')
                         .setRequired(true),
                 )
                 .addBooleanOption((option) =>
                     option
                         .setName('include_bots')
-                        .setDescription('Bot投稿もログに含めるか（省略時: いいえ）')
+                        .setDescription('Bot投稿も含める')
                         .setRequired(false),
                 ),
         )
         .toJSON(),
-
 
     new SlashCommandBuilder()
         .setName('hasrole')
