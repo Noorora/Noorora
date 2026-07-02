@@ -494,6 +494,39 @@ const commands = [
         )
         .toJSON(),
 
+
+    new SlashCommandBuilder()
+        .setName('forumlog')
+        .setDescription('フォーラムの過去ログを指定チャンネルへ出力します')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('archive')
+                .setDescription('指定フォーラム内の過去スレッド・投稿をログチャンネルへ出力します')
+                .addChannelOption((option) =>
+                    option
+                        .setName('forum')
+                        .setDescription('ログを出力したいフォーラム')
+                        .addChannelTypes(ChannelType.GuildForum)
+                        .setRequired(true),
+                )
+                .addChannelOption((option) =>
+                    option
+                        .setName('target_channel')
+                        .setDescription('ログの送信先チャンネルまたはスレッド')
+                        .addChannelTypes(...textOrThreadTypes)
+                        .setRequired(true),
+                )
+                .addBooleanOption((option) =>
+                    option
+                        .setName('include_bots')
+                        .setDescription('Bot投稿もログに含めるか（省略時: いいえ）')
+                        .setRequired(false),
+                ),
+        )
+        .toJSON(),
+
+
     new SlashCommandBuilder()
         .setName('hasrole')
         .setDescription('指定したロールを持っているメンバーを表示します')

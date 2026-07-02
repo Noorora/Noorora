@@ -4,6 +4,7 @@ const { handleCleanupButton } = require('./cleanupButtons');
 const commandModules = [
     require('../commands/help'),
     require('../commands/forum'),
+    require('../commands/forumlog'),
     require('../commands/rolemention'),
     require('../commands/reaction'),
     require('../commands/role'),
