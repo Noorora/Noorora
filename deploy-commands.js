@@ -542,12 +542,17 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName('pins')
-        .setDescription('サーバー内のピン留めメッセージを表示します')
+        .setDescription('フォーラム内スレッドのピン留めメッセージを表示します')
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('list')
-                .setDescription(
-                    'サーバー内のピン留めメッセージ一覧を表示します',
+                .setDescription('指定フォーラム内スレッドのピン留めメッセージ一覧を表示します')
+                .addChannelOption((option) =>
+                    option
+                        .setName('forum')
+                        .setDescription('対象フォーラム')
+                        .addChannelTypes(ChannelType.GuildForum)
+                        .setRequired(true),
                 ),
         )
         .toJSON(),

@@ -27,37 +27,6 @@ function canViewChannel(channel, member) {
         ?.has(PermissionFlagsBits.ViewChannel);
 }
 
-function isPinnedReadableChannel(channel) {
-    return (
-        channel.type === ChannelType.GuildText ||
-        channel.type === ChannelType.GuildAnnouncement ||
-        channel.type === ChannelType.PublicThread ||
-        channel.type === ChannelType.PrivateThread ||
-        channel.type === ChannelType.AnnouncementThread
-    );
-}
-
-function isForumChannel(channel) {
-    return channel.type === ChannelType.GuildForum;
-}
-
-function getChannelSortValue(channel) {
-    if (channel.isThread?.()) {
-        return channel.parent?.position ?? 999999;
-    }
-
-    return channel.position ?? 999999;
-}
-
-function getChannelLabel(channel) {
-    if (channel.isThread?.()) {
-        const parentName = channel.parent?.name || '親チャンネル不明';
-        return `🧵 ${channel.name}（親: #${parentName}）`;
-    }
-
-    return `#${channel.name}`;
-}
-
 function normalizeContent(content) {
     const text = content?.trim() || '（本文なし）';
 
@@ -68,14 +37,19 @@ function normalizeContent(content) {
     return `${text.slice(0, 1200)}\n...（長文のため省略）`;
 }
 
-async function fetchArchivedThreadsFromForum(forumChannel, member) {
+function getThreadLabel(thread) {
+    const forumName = thread.parent?.name || '親フォーラム不明';
+    return `🧵 ${thread.name}（親: #${forumName}）`;
+}
+
+async function fetchForumThreads(forumChannel, member) {
     const threads = new Map();
 
     if (!canViewChannel(forumChannel, member)) {
-        return threads;
+        return [];
     }
 
-    // アクティブスレッド
+    // アクティブスレッドを取得
     const active = await forumChannel.threads.fetchActive().catch(() => null);
 
     if (active?.threads) {
@@ -86,7 +60,7 @@ async function fetchArchivedThreadsFromForum(forumChannel, member) {
         }
     }
 
-    // アーカイブ済み公開スレッド
+    // アーカイブ済み公開スレッドを取得
     let before;
 
     while (true) {
@@ -134,54 +108,8 @@ async function fetchArchivedThreadsFromForum(forumChannel, member) {
         await sleep(300);
     }
 
-    return threads;
-}
-
-async function getTargetChannelsAndThreads(guild, member) {
-    const targets = new Map();
-
-    // 通常チャンネルとキャッシュ上のアクティブスレッド
-    for (const channel of guild.channels.cache.values()) {
-        if (!isPinnedReadableChannel(channel)) {
-            continue;
-        }
-
-        if (!canViewChannel(channel, member)) {
-            continue;
-        }
-
-        if (typeof channel.messages?.fetchPinned !== 'function') {
-            continue;
-        }
-
-        targets.set(channel.id, channel);
-    }
-
-    // フォーラム内のアクティブスレッド + アーカイブ済みスレッド
-    const forumChannels = guild.channels.cache.filter((channel) => {
-        return isForumChannel(channel) && canViewChannel(channel, member);
-    });
-
-    for (const forumChannel of forumChannels.values()) {
-        const forumThreads = await fetchArchivedThreadsFromForum(forumChannel, member);
-
-        for (const thread of forumThreads.values()) {
-            if (typeof thread.messages?.fetchPinned !== 'function') {
-                continue;
-            }
-
-            targets.set(thread.id, thread);
-        }
-    }
-
-    return [...targets.values()].sort((a, b) => {
-        const positionDiff = getChannelSortValue(a) - getChannelSortValue(b);
-
-        if (positionDiff !== 0) {
-            return positionDiff;
-        }
-
-        return String(a.name).localeCompare(String(b.name), 'ja');
+    return [...threads.values()].sort((a, b) => {
+        return a.createdTimestamp - b.createdTimestamp;
     });
 }
 
@@ -192,31 +120,54 @@ async function execute(interaction) {
         return;
     }
 
+    const forumChannel = interaction.options.getChannel('forum', true);
+
+    if (forumChannel.type !== ChannelType.GuildForum) {
+        await interaction.reply(
+            ephemeralOptions({
+                content: 'forum にはフォーラムチャンネルを指定してください。',
+            }),
+        );
+        return;
+    }
+
     await interaction.deferReply(
         ephemeralOptions(),
     );
 
-    const channels = await getTargetChannelsAndThreads(
-        interaction.guild,
+    const threads = await fetchForumThreads(
+        forumChannel,
         interaction.member,
     );
 
+    if (threads.length === 0) {
+        await interaction.editReply({
+            content:
+                `対象フォーラム <#${forumChannel.id}> 内に、閲覧可能なスレッドは見つかりませんでした。`,
+        });
+        return;
+    }
+
     const lines = [];
     let totalPins = 0;
-    let scannedChannels = 0;
+    let scannedThreads = 0;
 
-    for (const channel of channels) {
-        scannedChannels += 1;
+    for (const thread of threads) {
+        scannedThreads += 1;
 
         try {
-            const pinnedMessages = await channel.messages.fetchPinned();
+            if (typeof thread.messages?.fetchPinned !== 'function') {
+                continue;
+            }
+
+            const pinnedMessages = await thread.messages.fetchPinned();
 
             if (pinnedMessages.size === 0) {
                 continue;
             }
 
             lines.push('');
-            lines.push(`## ${getChannelLabel(channel)}`);
+            lines.push(`## ${getThreadLabel(thread)}`);
             lines.push('');
 
             const sortedMessages = [...pinnedMessages.values()].sort((a, b) => {
@@ -247,7 +198,7 @@ async function execute(interaction) {
             }
         } catch (error) {
             console.warn(
-                `ピン留め取得失敗: ${channel.name}`,
+                `ピン留め取得失敗: ${thread.name}`,
                 error,
             );
         }
@@ -259,17 +210,17 @@ async function execute(interaction) {
     if (totalPins === 0) {
         await interaction.editReply({
             content:
-                `閲覧可能なチャンネル・スレッドにピン留めされたメッセージは見つかりませんでした。\n` +
-                `確認対象: ${scannedChannels} チャンネル/スレッド`,
+                `対象フォーラム <#${forumChannel.id}> 内のスレッドに、ピン留めされたメッセージは見つかりませんでした。\n` +
+                `確認対象: ${scannedThreads} スレッド`,
         });
-
         return;
     }
 
     const chunks = splitLinesToMessages(
-        `📌 サーバー内ピン留め一覧\n` +
+        `📌 フォーラム内ピン留め一覧\n` +
+        `対象フォーラム: <#${forumChannel.id}> (${forumChannel.name})\n` +
         `総件数: ${totalPins}件\n` +
-        `確認対象: ${scannedChannels} チャンネル/スレッド\n`,
+        `確認対象: ${scannedThreads} スレッド\n`,
         lines,
     );
 
