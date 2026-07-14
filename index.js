@@ -7,6 +7,7 @@ const { createClient } = require('redis');
 const express = require('express');
 const { handleInteractionCreate } = require('./handlers/interactionCreate');
 const { handleMessageCreate } = require('./handlers/messageCreate');
+const { handleForwardEditRelay } = require('./events/forwardRelay');
 const { handleForumThreadCreate } = require('./events/forumThreadCreate');
 const { registerVoiceStateRelay } = require('./events/voiceStateRelay');
 
@@ -58,6 +59,7 @@ async function main() {
 
     client.on(Events.InteractionCreate, (interaction) => handleInteractionCreate(interaction, context));
     client.on(Events.MessageCreate, (message) => handleMessageCreate(message, context));
+    client.on(Events.MessageUpdate, (oldMessage, newMessage) => handleForwardEditRelay(oldMessage, newMessage, context),);
     client.on(Events.ThreadCreate, (thread) => handleForumThreadCreate(thread, context));
 
     registerVoiceStateRelay(client, kv);
