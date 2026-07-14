@@ -289,7 +289,6 @@ async function handleForwardEditRelay(oldMessage, newMessage, context) {
 
             const content = [
                 afterText,
-                '',
                 `${sourceLink} ${beforeLink}`,
             ].join('\n');
 
