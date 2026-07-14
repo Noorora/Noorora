@@ -198,11 +198,11 @@ async function sendToForwardWebhooks(webhookUrls, payload) {
     }
 }
 
-async function handleForwardEditRelay(oldMessage, newMessage, context {
+async function handleForwardEditRelay(oldMessage, newMessage, context) {
     try {
         const { client } = context;
 
-        if (newMessage?.partial {
+        if (newMessage?.partial) {
             newMessage = await newMessage.fetch().catch(() => null);
         }
 
@@ -216,7 +216,7 @@ async function handleForwardEditRelay(oldMessage, newMessage, context {
         const newContent = newMessage?.content ?? '';
 
         // 本文が変わっていない編集は無視
-        // 埋め込み更新・リンクプレビュー更新などのノイズ対策
+        // リンクプレビュー更新や埋め込み更新などのノイズ対策
         if (oldContent === newContent) return;
 
         const uniqueWebhookUrls = await getForwardWebhookUrls(newMessage, context);
