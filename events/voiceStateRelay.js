@@ -165,6 +165,7 @@ async function sendVoiceNoticeToWebhook(webhookUrl, member, newChannel, oldChann
 }
 
 function registerVoiceStateRelay(client, kv) {
+    client.on('voiceStateUpdate', async (oldState, newState) => {
         try {
             const guildId = newState.guild?.id || oldState.guild?.id;
             if (!guildId) return;
