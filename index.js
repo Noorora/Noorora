@@ -8,6 +8,7 @@ const express = require('express');
 const { handleInteractionCreate } = require('./handlers/interactionCreate');
 const { handleMessageCreate } = require('./handlers/messageCreate');
 const { handleForumThreadCreate } = require('./events/forumThreadCreate');
+const { registerVoiceStateRelay } = require('./events/voiceStateRelay');
 
 if (process.env.RUN_ON_RENDER !== 'true') {
     console.log('ローカル実行は禁止されています。終了します。');
@@ -42,6 +43,7 @@ async function main() {
             GatewayIntentBits.GuildMessages,
             GatewayIntentBits.MessageContent,
             GatewayIntentBits.GuildExpressions,
+            GatewayIntentBits.GuildVoiceStates,
         ],
     });
 
@@ -57,6 +59,8 @@ async function main() {
     client.on(Events.InteractionCreate, (interaction) => handleInteractionCreate(interaction, context));
     client.on(Events.MessageCreate, (message) => handleMessageCreate(message, context));
     client.on(Events.ThreadCreate, (thread) => handleForumThreadCreate(thread, context));
+
+    registerVoiceStateRelay(client, kv);
 
     await client.login(TOKEN);
 }
