@@ -137,17 +137,19 @@ async function sendToForwardWebhooks(webhookUrls, payload) {
 }
 
 async function findForwardedMessageLink(client, webhookUrl, originalMessageUrl, maxFetch = 500) {
-    const webhookClient = new WebhookClient({
-        url: webhookUrl,
-    });
+    const webhookResponse = await fetch(webhookUrl).catch(() => null);
 
-    const webhook = await webhookClient.fetch().catch(() => null);
-
-    if (!webhook || !webhook.channelId) {
+    if (!webhookResponse || !webhookResponse.ok) {
         return null;
     }
 
-    const targetChannel = await client.channels.fetch(webhook.channelId).catch(() => null);
+    const webhook = await webhookResponse.json().catch(() => null);
+
+    if (!webhook || !webhook.channel_id) {
+        return null;
+    }
+
+    const targetChannel = await client.channels.fetch(webhook.channel_id).catch(() => null);
 
     if (!targetChannel || typeof targetChannel.messages?.fetch !== 'function') {
         return null;
