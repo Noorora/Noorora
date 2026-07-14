@@ -9,6 +9,10 @@ const {
     forwardExcludeChannelsKey,
 } = require('../keys/redisKeys');
 
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function trimText(text, maxLength = 800) {
     const body = text?.trim() || '';
 
@@ -122,8 +126,14 @@ async function buildWebhookProfile(message) {
     };
 }
 
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+async function sendToForwardWebhooks(webhookUrls, payload) {
+    for (const webhookUrl of webhookUrls) {
+        const webhookClient = new WebhookClient({
+            url: webhookUrl,
+        });
+
+        await webhookClient.send(payload);
+    }
 }
 
 async function findForwardedMessageLink(client, webhookUrl, originalMessageUrl, maxFetch = 500) {
@@ -160,8 +170,8 @@ async function findForwardedMessageLink(client, webhookUrl, originalMessageUrl, 
             break;
         }
 
-        const found = [...batch.values()].find((message) => {
-            return message.content?.includes(originalMessageUrl);
+        const found = [...batch.values()].find((targetMessage) => {
+            return targetMessage.content?.includes(originalMessageUrl);
         });
 
         if (found) {
@@ -187,14 +197,40 @@ async function findForwardedMessageLink(client, webhookUrl, originalMessageUrl, 
     return null;
 }
 
+async function handleForwardRelay(message, context) {
+    try {
+        if (!await canForwardMessage(message, context)) return;
 
-async function sendToForwardWebhooks(webhookUrls, payload) {
-    for (const webhookUrl of webhookUrls) {
-        const webhookClient = new WebhookClient({
-            url: webhookUrl,
+        const uniqueWebhookUrls = await getForwardWebhookUrls(message, context);
+        if (uniqueWebhookUrls.length === 0) return;
+
+        let body = message.content?.trim() || '';
+        body = await normalizeCustomEmojiText(message, body);
+        body = `${body}${body ? '\n' : ''}${message.url}`;
+
+        const files = message.attachments.size > 0
+            ? [...message.attachments.values()].map((attachment) => ({
+                attachment: attachment.url,
+                name: attachment.name || 'attachment',
+            }))
+            : [];
+
+        const {
+            webhookUsername,
+            avatarURL,
+        } = await buildWebhookProfile(message);
+
+        await sendToForwardWebhooks(uniqueWebhookUrls, {
+            content: body || undefined,
+            username: webhookUsername,
+            avatarURL,
+            files,
+            allowedMentions: {
+                parse: [],
+            },
         });
-
-        await webhookClient.send(payload);
+    } catch (error) {
+        console.error('Webhook転送でエラー:', error);
     }
 }
 
@@ -206,6 +242,10 @@ async function handleForwardEditRelay(oldMessage, newMessage, context) {
             newMessage = await newMessage.fetch().catch(() => null);
         }
 
+        if (oldMessage?.partial) {
+            oldMessage = await oldMessage.fetch().catch(() => oldMessage);
+        }
+
         if (!newMessage) return;
         if (!newMessage.guild) return;
         if (!newMessage.author) return;
@@ -213,7 +253,7 @@ async function handleForwardEditRelay(oldMessage, newMessage, context) {
         if (!await canForwardMessage(newMessage, context)) return;
 
         const oldContent = oldMessage?.content ?? '';
-        const newContent = newMessage?.content ?? '';
+        const newContent = newMessage.content ?? '';
 
         // 本文が変わっていない編集は無視
         // リンクプレビュー更新や埋め込み更新などのノイズ対策
@@ -264,66 +304,6 @@ async function handleForwardEditRelay(oldMessage, newMessage, context) {
                 },
             });
         }
-    } catch (error) {
-        console.error('Webhook編集通知でエラー:', error);
-    }
-}
-
-async function handleForwardEditRelay(oldMessage, newMessage, context) {
-    try {
-        if (newMessage?.partial) {
-            newMessage = await newMessage.fetch().catch(() => null);
-        }
-
-        if (!newMessage) return;
-        if (!newMessage.guild) return;
-        if (!newMessage.author) return;
-
-        if (!await canForwardMessage(newMessage, context)) return;
-
-        const oldContent = oldMessage?.content ?? '';
-        const newContent = newMessage?.content ?? '';
-
-        // 本文が変わっていない編集は無視
-        // 埋め込み更新・リンクプレビュー更新などのノイズ対策
-        if (oldContent === newContent) return;
-
-        const uniqueWebhookUrls = await getForwardWebhookUrls(newMessage, context);
-        if (uniqueWebhookUrls.length === 0) return;
-
-        let beforeText = trimText(oldContent);
-        let afterText = trimText(newContent);
-
-        beforeText = await normalizeCustomEmojiText(newMessage, beforeText);
-        afterText = await normalizeCustomEmojiText(newMessage, afterText);
-
-        const content = [
-            `✏️ <@${newMessage.author.id}> がメッセージを編集しました。`,
-            '',
-            '編集前:',
-            beforeText,
-            '',
-            '編集後:',
-            afterText,
-            '',
-            `${newMessage.url}`,
-        ].join('\n');
-
-        const {
-            webhookUsername,
-            avatarURL,
-        } = await buildWebhookProfile(newMessage);
-
-        const editWebhookUsername = `✏️ ${webhookUsername}`.slice(0, 80);
-
-        await sendToForwardWebhooks(uniqueWebhookUrls, {
-            content,
-            username: editWebhookUsername,
-            avatarURL,
-            allowedMentions: {
-                parse: [],
-            },
-        });
     } catch (error) {
         console.error('Webhook編集通知でエラー:', error);
     }
