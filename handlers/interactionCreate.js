@@ -11,6 +11,7 @@ const commandModules = [
     require('../commands/forward'),
     require('../commands/hasrole'),
     require('../commands/joined'),
+    require('../commands/pins'),
 ];
 
 const commands = new Map(commandModules.map((command) => [command.name, command]));

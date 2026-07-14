@@ -540,6 +540,17 @@ const commands = [
         )
         .toJSON(),
 
+    new SlashCommandBuilder()
+        .setName('pins')
+        .setDescription('サーバー内のピン留めメッセージを表示します')
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('list')
+                .setDescription(
+                    'サーバー内のピン留めメッセージ一覧を表示します',
+                ),
+        )
+        .toJSON(),
 
     new SlashCommandBuilder()
         .setName('hasrole')
