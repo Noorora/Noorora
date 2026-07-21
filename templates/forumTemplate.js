@@ -10,7 +10,8 @@ const FORUM_PLACEHOLDER_LINES = [
 const DEFAULT_FORUM_MESSAGE_TEMPLATE =
     '{forum} に、新しいスレッドが作成されました！\\n' +
     'スレ主: {author}{newcomerMark}\\n' +
-    'リンク: [{thread}]({link})';
+    'スレタイ: {thread}\\n'+
+    '[スレッドへ]({link})';
 
 function renderForumMessage(template, data) {
     return template
