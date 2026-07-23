@@ -588,6 +588,13 @@ const commands = [
     new SlashCommandBuilder()
         .setName('pins')
         .setDescription('フォーラム内スレッドのピン留めメッセージを表示します')
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('menu')
+                .setDescription('ピン留め一覧メニューを表示します'),
+        )
+
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('list')

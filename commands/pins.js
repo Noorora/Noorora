@@ -1,5 +1,9 @@
 const {
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
     ChannelType,
+    ChannelSelectMenuBuilder,
     PermissionFlagsBits,
 } = require('discord.js');
 
@@ -42,6 +46,76 @@ function getThreadLabel(thread) {
     return `🧵 ${thread.name}（親: #${forumName}）`;
 }
 
+function buildPinsMenuContent() {
+    return [
+        '## 📌 ピン留め一覧',
+        '',
+        '操作を選んでください。',
+        '',
+        '📋 **説明表示**',
+        'フォーラム内スレッドのピン留め一覧取得について説明します。',
+        '',
+        '➕ **ピン留め一覧取得**',
+        '指定フォーラム内のスレッドから、ピン留めされたメッセージを一覧表示します。',
+    ].join('\n');
+}
+
+function buildPinsMenuComponents() {
+    return [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('pins_menu_help')
+                .setLabel('説明表示')
+                .setEmoji('📋')
+                .setStyle(ButtonStyle.Primary),
+
+            new ButtonBuilder()
+                .setCustomId('pins_menu_list')
+                .setLabel('ピン留め一覧取得')
+                .setEmoji('➕')
+                .setStyle(ButtonStyle.Success),
+        ),
+    ];
+}
+
+function buildPinsHelpContent() {
+    return [
+        '## 📌 ピン留め一覧について',
+        '',
+        '指定したフォーラム内のスレッドを取得し、各スレッド内にあるピン留めメッセージを一覧表示します。',
+        '',
+        '取得対象:',
+        '・指定フォーラム内のアクティブスレッド',
+        '・指定フォーラム内のアーカイブ済み公開スレッド',
+        '・実行者が閲覧できるスレッド',
+        '',
+        '表示内容:',
+        '・スレッド名',
+        '・投稿者',
+        '・投稿日時',
+        '・本文',
+        '・添付ファイルURL',
+        '・元メッセージリンク',
+        '',
+        '注意:',
+        '・スレッド数が多いフォーラムでは時間がかかる場合があります。',
+        '・閲覧権限のないスレッドのピン留めは表示されません。',
+    ].join('\n');
+}
+
+function buildForumSelectMenu() {
+    return [
+        new ActionRowBuilder().addComponents(
+            new ChannelSelectMenuBuilder()
+                .setCustomId('pins_select_forum')
+                .setPlaceholder('ピン留め一覧を取得するフォーラムを選択してください')
+                .setChannelTypes(ChannelType.GuildForum)
+                .setMinValues(1)
+                .setMaxValues(1),
+        ),
+    ];
+}
+
 async function fetchForumThreads(forumChannel, member) {
     const threads = new Map();
 
@@ -49,7 +123,6 @@ async function fetchForumThreads(forumChannel, member) {
         return [];
     }
 
-    // アクティブスレッドを取得
     const active = await forumChannel.threads.fetchActive().catch(() => null);
 
     if (active?.threads) {
@@ -60,7 +133,6 @@ async function fetchForumThreads(forumChannel, member) {
         }
     }
 
-    // アーカイブ済み公開スレッドを取得
     let before;
 
     while (true) {
@@ -73,7 +145,9 @@ async function fetchForumThreads(forumChannel, member) {
             options.before = before;
         }
 
-        const archived = await forumChannel.threads.fetchArchived(options).catch(() => null);
+        const archived = await forumChannel.threads
+            .fetchArchived(options)
+            .catch(() => null);
 
         if (!archived?.threads || archived.threads.size === 0) {
             break;
@@ -113,27 +187,22 @@ async function fetchForumThreads(forumChannel, member) {
     });
 }
 
-async function execute(interaction) {
-    const sub = interaction.options.getSubcommand();
-
-    if (sub !== 'list') {
-        return;
-    }
-
-    const forumChannel = interaction.options.getChannel('forum', true);
-
+async function listPinsInForum(interaction, forumChannel, alreadyAcknowledged = false) {
     if (forumChannel.type !== ChannelType.GuildForum) {
-        await interaction.reply(
-            ephemeralOptions({
-                content: 'forum にはフォーラムチャンネルを指定してください。',
-            }),
-        );
+        const content = 'forum にはフォーラムチャンネルを指定してください。';
+
+        if (alreadyAcknowledged) {
+            await interaction.editReply({ content });
+        } else {
+            await interaction.reply(ephemeralOptions({ content }));
+        }
+
         return;
     }
 
-    await interaction.deferReply(
-        ephemeralOptions(),
-    );
+    if (!alreadyAcknowledged) {
+        await interaction.deferReply(ephemeralOptions());
+    }
 
     const threads = await fetchForumThreads(
         forumChannel,
@@ -203,7 +272,6 @@ async function execute(interaction) {
             );
         }
 
-        // 取得連打を少し抑える
         await sleep(120);
     }
 
@@ -237,7 +305,102 @@ async function execute(interaction) {
     }
 }
 
+async function execute(interaction) {
+    const sub = interaction.options.getSubcommand(false);
+
+    if (sub === 'menu') {
+        await interaction.reply(
+            ephemeralOptions({
+                content: buildPinsMenuContent(),
+                components: buildPinsMenuComponents(),
+            }),
+        );
+
+        return;
+    }
+
+    if (sub !== 'list') {
+        return;
+    }
+
+    const forumChannel = interaction.options.getChannel('forum', true);
+
+    await listPinsInForum(
+        interaction,
+        forumChannel,
+        false,
+    );
+}
+
+async function handleComponent(interaction, context) {
+    const { client } = context;
+
+    if (interaction.isButton()) {
+        if (interaction.customId === 'pins_menu_help') {
+            await interaction.reply(
+                ephemeralOptions({
+                    content: buildPinsHelpContent(),
+                }),
+            );
+
+            return true;
+        }
+
+        if (interaction.customId === 'pins_menu_list') {
+            await interaction.reply(
+                ephemeralOptions({
+                    content: 'ピン留め一覧を取得するフォーラムを選択してください。',
+                    components: buildForumSelectMenu(),
+                }),
+            );
+
+            return true;
+        }
+
+        return false;
+    }
+
+    if (interaction.isChannelSelectMenu()) {
+        if (interaction.customId === 'pins_select_forum') {
+            const forumId = interaction.values[0];
+
+            const forumChannel = await client.channels
+                .fetch(forumId)
+                .catch(() => null);
+
+            if (!forumChannel || forumChannel.guildId !== interaction.guildId) {
+                await interaction.update({
+                    content: '対象フォーラムが見つからないか、このサーバーのフォーラムではありません。',
+                    components: [],
+                });
+
+                return true;
+            }
+
+            await interaction.update({
+                content:
+                    `ピン留め一覧の取得を開始します。\n` +
+                    `対象フォーラム: <#${forumChannel.id}>`,
+                components: [],
+            });
+
+            await listPinsInForum(
+                interaction,
+                forumChannel,
+                true,
+            );
+
+            return true;
+        }
+
+        return false;
+    }
+
+    return false;
+}
+
 module.exports = {
     name: 'pins',
     execute,
+    handleComponent,
 };
