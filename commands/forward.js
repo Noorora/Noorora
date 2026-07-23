@@ -221,76 +221,10 @@ function buildForwardAllowModal(mode) {
 }
 
 async function execute(interaction, context) {
-    const { kv } = context;
-
-    const group = interaction.options.getSubcommandGroup(false);
-    const sub = interaction.options.getSubcommand(false);
-
-    if (!sub) {
-        await interaction.reply(ephemeralOptions({
-            content: buildForwardMenuContent(),
-            components: buildForwardMenuComponents(),
-        }));
-        return;
-    }
-
-    if (sub === 'menu') {
-        await interaction.reply(ephemeralOptions({
-            content: buildForwardMenuContent(),
-            components: buildForwardMenuComponents(),
-        }));
-        return;
-    }
-
-    if (group === 'exclude') {
-        await handleExclude(interaction, kv, sub);
-        return;
-    }
-
-    if (group === 'allow') {
-        await handleAllow(interaction, context, sub);
-        return;
-    }
-
-    if (sub === 'set') {
-        const sourceChannel = interaction.options.getChannel('source_channel', false);
-        const sourceChannelId = sourceChannel ? sourceChannel.id : FORWARD_ALL_CHANNELS;
-
-        const targetWebhookUrl = interaction.options
-            .getString('target_webhook_url', true)
-            .trim();
-
-        await addForwardWebhook(
-            interaction,
-            kv,
-            sourceChannelId,
-            sourceChannel,
-            targetWebhookUrl,
-        );
-        return;
-    }
-
-    if (sub === 'show') {
-        await handleShow(interaction, kv);
-        return;
-    }
-
-    if (sub === 'unset') {
-        const sourceChannel = interaction.options.getChannel('source_channel', false);
-        const sourceChannelId = sourceChannel ? sourceChannel.id : FORWARD_ALL_CHANNELS;
-
-        const targetWebhookUrl = interaction.options
-            .getString('target_webhook_url', true)
-            .trim();
-
-        await removeForwardWebhook(
-            interaction,
-            kv,
-            sourceChannelId,
-            sourceChannel,
-            targetWebhookUrl,
-        );
-    }
+    await interaction.reply(ephemeralOptions({
+        content: buildForwardMenuContent(),
+        components: buildForwardMenuComponents(),
+    }));
 }
 
 async function addForwardWebhook(interaction, kv, sourceChannelId, sourceChannel, targetWebhookUrl) {
@@ -405,12 +339,52 @@ async function showExcludeChannels(interaction, kv) {
         return;
     }
 
-    const lines = channelIds.map((id, index) => {
-        return `${index + 1}. <#${id}> (${id})`;
-    });
+    const validLines = [];
+    const removedLines = [];
+
+    for (const channelId of channelIds) {
+        const channel = await interaction.client.channels
+            .fetch(channelId)
+            .catch(() => null);
+
+        if (
+            !channel ||
+            channel.guildId !== interaction.guildId
+        ) {
+            await kv.sRem(
+                forwardExcludeChannelsKey(interaction.guildId),
+                channelId,
+            );
+
+            removedLines.push(
+                `・除外チャンネル <#${channelId}> が見つからないため、除外一覧から削除しました。`,
+            );
+
+            continue;
+        }
+
+        validLines.push(
+            `${validLines.length + 1}. <#${channelId}> (${channelId})`,
+        );
+    }
+
+    const lines = [];
+
+    if (removedLines.length > 0) {
+        lines.push('## 自動削除した無効な除外設定');
+        lines.push(...removedLines);
+        lines.push('');
+    }
+
+    if (validLines.length > 0) {
+        lines.push('## 鯖全体転送の除外チャンネル一覧');
+        lines.push(...validLines);
+    } else {
+        lines.push('現在有効な除外チャンネルはありません。');
+    }
 
     const chunks = splitLinesToMessages(
-        '鯖全体転送の除外チャンネル一覧:\n',
+        '',
         lines,
     );
 
@@ -513,8 +487,48 @@ async function handleShow(interaction, kv) {
     }
 
     const lines = [];
+    const removedLines = [];
 
     for (const sourceChannelId of sourceChannelIds) {
+        let sourceLabel = 'サーバー全体';
+        let sourceChannel = null;
+
+        if (sourceChannelId !== FORWARD_ALL_CHANNELS) {
+            sourceChannel = await interaction.client.channels
+                .fetch(sourceChannelId)
+                .catch(() => null);
+
+            if (
+                !sourceChannel ||
+                sourceChannel.guildId !== interaction.guildId
+            ) {
+                await kv.del(
+                    forwardWebhookTargetsKey(interaction.guildId, sourceChannelId),
+                );
+
+                await kv.del(
+                    forwardAllowedBotsKey(interaction.guildId, sourceChannelId),
+                );
+
+                await kv.del(
+                    forwardAllowedWebhooksKey(interaction.guildId, sourceChannelId),
+                );
+
+                await kv.sRem(
+                    forwardWebhookIndexKey(interaction.guildId),
+                    sourceChannelId,
+                );
+
+                removedLines.push(
+                    `・転送元 <#${sourceChannelId}> が見つからないため、その転送設定と許可設定を削除しました。`,
+                );
+
+                continue;
+            }
+
+            sourceLabel = `<#${sourceChannelId}>`;
+        }
+
         const webhookUrls = await kv.sMembers(
             forwardWebhookTargetsKey(interaction.guildId, sourceChannelId),
         );
@@ -526,10 +540,6 @@ async function handleShow(interaction, kv) {
         const allowedWebhookIds = await kv.sMembers(
             forwardAllowedWebhooksKey(interaction.guildId, sourceChannelId),
         );
-
-        const sourceLabel = sourceChannelId === FORWARD_ALL_CHANNELS
-            ? 'サーバー全体'
-            : `<#${sourceChannelId}>`;
 
         lines.push(`転送元: ${sourceLabel}`);
 
@@ -551,9 +561,24 @@ async function handleShow(interaction, kv) {
         lines.push('');
     }
 
+    const outputLines = [];
+
+    if (removedLines.length > 0) {
+        outputLines.push('## 自動削除した無効な設定');
+        outputLines.push(...removedLines);
+        outputLines.push('');
+    }
+
+    if (lines.length > 0) {
+        outputLines.push('## 現在の転送設定一覧');
+        outputLines.push(...lines);
+    } else {
+        outputLines.push('現在有効な転送設定はありません。');
+    }
+
     const chunks = splitLinesToMessages(
-        '現在の転送設定一覧:\n',
-        lines,
+        '',
+        outputLines,
     );
 
     await interaction.reply(ephemeralOptions({
