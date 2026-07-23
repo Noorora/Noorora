@@ -41,11 +41,13 @@ const commands = [
         .setName('forum')
         .setDescription('フォーラム通知設定を管理します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('menu')
                 .setDescription('フォーラム通知設定メニューを表示します'),
-        )
+    )
+
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('channel')
@@ -122,6 +124,13 @@ const commands = [
         .setName('reaction')
         .setDescription('特定チャンネル・特定ユーザーへの自動リアクション設定を管理します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('menu')
+                .setDescription('自動リアクション設定メニューを表示します'),
+    )
+
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('set')
@@ -314,17 +323,19 @@ const commands = [
                         ),
                 ),
     )
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('menu')
-                .setDescription('転送設定メニューを表示します'),
-        )
         .toJSON(),
 
     new SlashCommandBuilder()
         .setName('rolemention')
         .setDescription('ロールメンション転載設定を管理します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('menu')
+                .setDescription('転送設定メニューを表示します'),
+        )
+
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('set')
@@ -376,6 +387,13 @@ const commands = [
         .setName('forward')
         .setDescription('特定チャンネルの書き込み転送設定を管理します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('menu')
+                .setDescription('転送設定メニューを表示します'),
+        )
+
         .addSubcommandGroup((group) =>
             group
                 .setName('exclude')
