@@ -43,49 +43,49 @@ const commands = [
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .addSubcommand((subcommand) =>
             subcommand
+                .setName('menu')
+                .setDescription('フォーラム通知設定メニューを表示します'),
+        )
+        .addSubcommand((subcommand) =>
+            subcommand
                 .setName('channel')
-                .setDescription('通知先をチャンネルまたは既存スレッドに設定します')
+                .setDescription('フォーラム通知先を追加します')
                 .addChannelOption((option) =>
                     option
                         .setName('target_channel')
-                        .setDescription('通知先のチャンネルまたは既存スレッド')
-                        .addChannelTypes(...textOrThreadTypes)
+                        .setDescription('通知先チャンネルまたはスレッド')
+                        .addChannelTypes(
+                            ChannelType.GuildText,
+                            ChannelType.PublicThread,
+                            ChannelType.PrivateThread,
+                            ChannelType.AnnouncementThread,
+                        )
                         .setRequired(true),
                 )
                 .addChannelOption((option) =>
                     option
                         .setName('forum')
-                        .setDescription('監視したいフォーラム（単体登録用）')
+                        .setDescription('対象フォーラム')
                         .addChannelTypes(ChannelType.GuildForum)
                         .setRequired(false),
                 )
                 .addStringOption((option) =>
                     option
                         .setName('forum_ids')
-                        .setDescription('監視したいフォーラムIDをカンマ区切りで指定（一括登録用）')
+                        .setDescription('対象フォーラムID。複数の場合はカンマ区切り')
                         .setRequired(false),
                 )
                 .addStringOption((option) =>
                     option
                         .setName('message')
-                        .setDescription('通知メッセージのテンプレート（省略時はデフォルト）')
+                        .setDescription('通知メッセージ。\\nで改行できます')
                         .setRequired(false),
-            ),
-                .addSubcommand((subcommand) =>
-                    subcommand
-                        .setName('menu')
-                        .setDescription('フォーラム通知設定メニューを表示します'),
-                )
-        )
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('placeholders')
-                .setDescription('カスタムメッセージで使えるプレースホルダ一覧を表示します'),
+                ),
         )
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('show')
-                .setDescription('現在のフォーラム通知設定一覧を表示します'),
+                .setDescription('現在のフォーラム通知設定を表示します'),
         )
         .addSubcommand((subcommand) =>
             subcommand
@@ -94,17 +94,27 @@ const commands = [
                 .addChannelOption((option) =>
                     option
                         .setName('forum')
-                        .setDescription('対象フォーラム（省略可）')
+                        .setDescription('削除対象のフォーラム')
                         .addChannelTypes(ChannelType.GuildForum)
                         .setRequired(false),
                 )
                 .addChannelOption((option) =>
                     option
                         .setName('target_channel')
-                        .setDescription('対象通知先チャンネルまたはスレッド（省略可）')
-                        .addChannelTypes(...textOrThreadTypes)
+                        .setDescription('削除対象の通知先チャンネルまたはスレッド')
+                        .addChannelTypes(
+                            ChannelType.GuildText,
+                            ChannelType.PublicThread,
+                            ChannelType.PrivateThread,
+                            ChannelType.AnnouncementThread,
+                        )
                         .setRequired(false),
                 ),
+        )
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('placeholders')
+                .setDescription('カスタムメッセージで使えるプレースホルダ一覧を表示します'),
         )
         .toJSON(),
 
