@@ -30,6 +30,7 @@ const { buildForumPlaceholdersHelp } = require('../templates/forumTemplate');
 const {
     resolveForumIds,
     collectForumShowData,
+    applyForumCleanup,
 } = require('../services/forumService');
 
 const allowedTargetTypes = [
@@ -314,7 +315,7 @@ async function addForumTargets(interaction, context, options) {
 async function showForumSettings(interaction, context, useEphemeral = false) {
     const { client, kv } = context;
 
-    const {
+    let {
         validLines,
         staleEntries,
     } = await collectForumShowData(
@@ -323,7 +324,31 @@ async function showForumSettings(interaction, context, useEphemeral = false) {
         interaction.guildId,
     );
 
-    if (validLines.length === 0 && staleEntries.length === 0) {
+    const removedLines = [];
+
+    if (staleEntries.length > 0) {
+        const cleanedLines = await applyForumCleanup(
+            kv,
+            interaction.guildId,
+            staleEntries,
+        );
+
+        removedLines.push(...cleanedLines);
+
+        const refreshed = await collectForumShowData(
+            client,
+            kv,
+            interaction.guildId,
+        );
+
+        validLines = refreshed.validLines;
+        staleEntries = refreshed.staleEntries;
+    }
+
+    if (
+        validLines.length === 0 &&
+        removedLines.length === 0
+    ) {
         const content = 'このサーバーにはまだフォーラム通知設定がありません。';
 
         if (useEphemeral) {
@@ -335,64 +360,44 @@ async function showForumSettings(interaction, context, useEphemeral = false) {
         return;
     }
 
-    if (staleEntries.length === 0) {
-        await replyChunks(
-            interaction,
-            '現在のフォーラム通知設定一覧:\n',
-            validLines,
-            useEphemeral,
-        );
+    const lines = [];
+
+    if (removedLines.length > 0) {
+        lines.push('## 自動削除した無効な設定');
+        lines.push(...removedLines);
+        lines.push('');
+    }
+
+    if (validLines.length > 0) {
+        lines.push('## 現在のフォーラム通知設定一覧');
+        lines.push(...validLines);
+    } else {
+        lines.push('現在有効なフォーラム通知設定はありません。');
+    }
+
+    const chunks = splitLinesToMessages(
+        '',
+        lines,
+    );
+
+    if (useEphemeral) {
+        await interaction.reply(ephemeralOptions({
+            content: chunks[0],
+        }));
+
+        for (let i = 1; i < chunks.length; i++) {
+            await interaction.followUp(ephemeralOptions({
+                content: chunks[i],
+            }));
+        }
 
         return;
     }
 
-    const staleLines = staleEntries.map((entry) => {
-        return entry.type === 'forum_missing'
-            ? `消失したフォーラム: <#${entry.forumId}>`
-            : `フォーラム <#${entry.forumId}> → 消失した通知先 <#${entry.targetId}>`;
-    });
+    await interaction.reply(chunks[0]);
 
-    const token = crypto.randomUUID();
-
-    await kv.setEx(
-        pendingCleanupKey(token),
-        900,
-        JSON.stringify({
-            kind: 'forum',
-            guildId: interaction.guildId,
-            validLines,
-            staleEntries,
-            staleLines,
-        }),
-    );
-
-    await interaction.reply(ephemeralOptions({
-        content: buildStaleSummaryContent('forum', validLines, staleLines),
-        components: buildCleanupChoiceButtons('forum', token),
-    }));
-
-    if (validLines.length > 0) {
-        const validChunks = splitLinesToMessages(
-            '有効な設定一覧:\n',
-            validLines,
-        );
-
-        for (const chunk of validChunks) {
-            await interaction.followUp(ephemeralOptions({
-                content: chunk,
-            }));
-        }
-    }
-
-    const staleChunks = splitLinesToMessages(
-        '削除候補一覧:\n',
-        staleLines.map((line, index) => `${index + 1}. ${line}`),
-    );
-
-    for (const chunk of staleChunks) {
-        await interaction.followUp(ephemeralOptions({
-            content: chunk,
-        }));
+    for (let i = 1; i < chunks.length; i++) {
+        await interaction.followUp(chunks[i]);
     }
 }
 
