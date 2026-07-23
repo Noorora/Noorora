@@ -37,7 +37,7 @@ function buildForwardMenuContent() {
         '',
         '操作を選んでください。',
         '',
-        '📋 **一覧表示**',
+        '📋 **転送一覧**',
         '現在の転送設定、許可Bot、許可Webhookを表示します。',
         '',
         '🌐 **全体転送追加**',
@@ -49,20 +49,23 @@ function buildForwardMenuContent() {
         '🗑️ **転送削除**',
         '登録済みの転送Webhook URLを削除します。',
         '',
-        '✅ **許可対象追加**',
-        'Bot投稿やWebhook投稿を転送対象として許可します。',
-        '',
-        '🚫 **許可対象削除**',
-        '許可済みのBot/Webhookを削除します。',
-        '',
-        '🙈 **除外チャンネル追加**',
-        'サーバー全体転送から除外するチャンネルを追加します。',
-        '',
         '📋 **除外一覧**',
         'サーバー全体転送から除外されているチャンネルを表示します。',
         '',
+        '🙈 **除外追加**',
+        'サーバー全体転送から除外するチャンネルを追加します。',
+        '',
         '👁️ **除外解除**',
         '除外チャンネルから削除します。',
+        '',
+        '📋 **許可一覧**',
+        '転送許可Bot、許可Webhookを表示します。',
+        '',
+        '✅ **許可追加**',
+        'Bot投稿やWebhook投稿を転送対象として許可します。',
+        '',
+        '🚫 **許可削除**',
+        '許可済みのBot/Webhookを削除します。',
     ].join('\n');
 }
 
@@ -71,7 +74,7 @@ function buildForwardMenuComponents() {
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('forward_menu_show')
-                .setLabel('一覧表示')
+                .setLabel('転送一覧')
                 .setEmoji('📋')
                 .setStyle(ButtonStyle.Primary),
 
@@ -93,36 +96,45 @@ function buildForwardMenuComponents() {
                 .setEmoji('🗑️')
                 .setStyle(ButtonStyle.Danger),
         ),
+
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId('forward_menu_allow_add')
-                .setLabel('許可追加')
-                .setEmoji('✅')
-                .setStyle(ButtonStyle.Secondary),
-
-            new ButtonBuilder()
-                .setCustomId('forward_menu_allow_remove')
-                .setLabel('許可削除')
-                .setEmoji('🚫')
-                .setStyle(ButtonStyle.Secondary),
+                .setCustomId('forward_menu_exclude_show')
+                .setLabel('除外一覧')
+                .setEmoji('📋')
+                .setStyle(ButtonStyle.Primary),
 
             new ButtonBuilder()
                 .setCustomId('forward_menu_exclude_add')
                 .setLabel('除外追加')
                 .setEmoji('🙈')
-                .setStyle(ButtonStyle.Secondary),
-
-            new ButtonBuilder()
-                .setCustomId('forward_menu_exclude_show')
-                .setLabel('除外一覧')
-                .setEmoji('📋')
-                .setStyle(ButtonStyle.Secondary),
+                .setStyle(ButtonStyle.Success),
 
             new ButtonBuilder()
                 .setCustomId('forward_menu_exclude_remove')
                 .setLabel('除外解除')
                 .setEmoji('👁️')
-                .setStyle(ButtonStyle.Secondary),
+                .setStyle(ButtonStyle.Danger),
+        ),
+
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('forward_menu_allow_show')
+                .setLabel('許可一覧')
+                .setEmoji('📋')
+                .setStyle(ButtonStyle.Primary),
+
+            new ButtonBuilder()
+                .setCustomId('forward_menu_allow_add')
+                .setLabel('許可追加')
+                .setEmoji('✅')
+                .setStyle(ButtonStyle.Success),
+
+            new ButtonBuilder()
+                .setCustomId('forward_menu_allow_remove')
+                .setLabel('許可削除')
+                .setEmoji('🚫')
+                .setStyle(ButtonStyle.Danger),
         ),
     ];
 }
@@ -559,6 +571,10 @@ async function handleComponent(interaction, context) {
     const { client, kv } = context;
 
     if (interaction.isButton()) {
+        // =========================================================
+        // 1段目: 転送設定
+        // 📋 一覧 → ➕ 追加 → 🗑️ 削除
+        // =========================================================
         if (interaction.customId === 'forward_menu_show') {
             await handleShow(interaction, kv);
             return true;
@@ -611,17 +627,12 @@ async function handleComponent(interaction, context) {
             return true;
         }
 
-        if (interaction.customId === 'forward_menu_allow_add') {
-            await interaction.showModal(
-                buildForwardAllowModal('add'),
-            );
-            return true;
-        }
-
-        if (interaction.customId === 'forward_menu_allow_remove') {
-            await interaction.showModal(
-                buildForwardAllowModal('remove'),
-            );
+        // =========================================================
+        // 2段目: 除外チャンネル
+        // 📋 一覧 → ➕ 追加 → 🗑️ 削除/解除
+        // =========================================================
+        if (interaction.customId === 'forward_menu_exclude_show') {
+            await showExcludeChannels(interaction, kv);
             return true;
         }
 
@@ -636,11 +647,6 @@ async function handleComponent(interaction, context) {
             return true;
         }
 
-        if (interaction.customId === 'forward_menu_exclude_show') {
-            await showExcludeChannels(interaction, kv);
-            return true;
-        }
-
         if (interaction.customId === 'forward_menu_exclude_remove') {
             await interaction.reply(ephemeralOptions({
                 content: '鯖全体転送の除外を解除するチャンネルを選択してください。',
@@ -649,6 +655,29 @@ async function handleComponent(interaction, context) {
                     '除外解除するチャンネルを選択してください',
                 ),
             }));
+            return true;
+        }
+
+        // =========================================================
+        // 3段目: 許可対象
+        // 📋 一覧 → ➕ 追加 → 🗑️ 削除
+        // =========================================================
+        if (interaction.customId === 'forward_menu_allow_show') {
+            await handleShow(interaction, kv);
+            return true;
+        }
+
+        if (interaction.customId === 'forward_menu_allow_add') {
+            await interaction.showModal(
+                buildForwardAllowModal('add'),
+            );
+            return true;
+        }
+
+        if (interaction.customId === 'forward_menu_allow_remove') {
+            await interaction.showModal(
+                buildForwardAllowModal('remove'),
+            );
             return true;
         }
 
