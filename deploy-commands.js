@@ -216,6 +216,13 @@ const commands = [
         .setName('role')
         .setDescription('ロール条件でメンバー一覧を表示します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('menu')
+                .setDescription('ロール分析メニューを表示します'),
+        )
+
         .addSubcommandGroup((group) =>
             group
                 .setName('missing')
@@ -612,6 +619,11 @@ const commands = [
     new SlashCommandBuilder()
         .setName('hasrole')
         .setDescription('指定したロールを持っているメンバーを表示します')
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('menu')
+                .setDescription('ロール所持者確認メニューを表示します'),
+        )
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('list')

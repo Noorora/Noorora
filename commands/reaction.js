@@ -76,22 +76,22 @@ function buildReactionMenuComponents() {
 
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId('reaction_menu_allow_add')
-                .setLabel('許可Bot追加')
-                .setEmoji('🤖')
-                .setStyle(ButtonStyle.Secondary),
-
-            new ButtonBuilder()
                 .setCustomId('reaction_menu_allow_show')
                 .setLabel('許可Bot一覧')
                 .setEmoji('📋')
-                .setStyle(ButtonStyle.Secondary),
+                .setStyle(ButtonStyle.Primary),
+
+            new ButtonBuilder()
+                .setCustomId('reaction_menu_allow_add')
+                .setLabel('許可Bot追加')
+                .setEmoji('🤖')
+                .setStyle(ButtonStyle.Success),
 
             new ButtonBuilder()
                 .setCustomId('reaction_menu_allow_remove')
                 .setLabel('許可Bot削除')
                 .setEmoji('🚫')
-                .setStyle(ButtonStyle.Secondary),
+                .setStyle(ButtonStyle.Danger),
         ),
     ];
 }
