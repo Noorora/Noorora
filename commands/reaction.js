@@ -1,4 +1,14 @@
-const { ChannelType } = require('discord.js');
+const {
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    ChannelType,
+    ChannelSelectMenuBuilder,
+} = require('discord.js');
+
 const { ephemeralOptions } = require('../utils/ephemeral');
 const { splitLinesToMessages } = require('../utils/messageSplit');
 const {
@@ -13,6 +23,76 @@ const allowedTargetTypes = [
     ChannelType.PrivateThread,
     ChannelType.AnnouncementThread,
 ];
+
+function buildReactionMenuContent() {
+    return [
+        '## 😀 自動リアクション設定',
+        '',
+        '操作を選んでください。',
+        '',
+        '📋 一覧表示',
+        '現在の自動リアクション設定を表示します。',
+        '',
+        '➕ リアクション追加',
+        '自動リアクション設定を追加します。',
+        '',
+        '🗑️ リアクション削除',
+        '自動リアクション設定を削除します。',
+        '',
+        '🤖 許可Bot追加',
+        '自動リアクション対象としてBotを許可します。',
+        '',
+        '📋 許可Bot一覧',
+        '許可されているBot一覧を表示します。',
+        '',
+        '🚫 許可Bot削除',
+        '許可Botを削除します。',
+    ].join('\n');
+}
+
+function buildReactionMenuComponents() {
+    return [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('reaction_menu_show')
+                .setLabel('一覧表示')
+                .setEmoji('📋')
+                .setStyle(ButtonStyle.Primary),
+
+            new ButtonBuilder()
+                .setCustomId('reaction_menu_add')
+                .setLabel('リアクション追加')
+                .setEmoji('➕')
+                .setStyle(ButtonStyle.Success),
+
+            new ButtonBuilder()
+                .setCustomId('reaction_menu_remove')
+                .setLabel('リアクション削除')
+                .setEmoji('🗑️')
+                .setStyle(ButtonStyle.Danger),
+        ),
+
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('reaction_menu_allow_add')
+                .setLabel('許可Bot追加')
+                .setEmoji('🤖')
+                .setStyle(ButtonStyle.Secondary),
+
+            new ButtonBuilder()
+                .setCustomId('reaction_menu_allow_show')
+                .setLabel('許可Bot一覧')
+                .setEmoji('📋')
+                .setStyle(ButtonStyle.Secondary),
+
+            new ButtonBuilder()
+                .setCustomId('reaction_menu_allow_remove')
+                .setLabel('許可Bot削除')
+                .setEmoji('🚫')
+                .setStyle(ButtonStyle.Secondary),
+        ),
+    ];
+}
 
 function parseReactionRules(hash) {
     return Object.entries(hash).map(([field, emoji]) => {
@@ -29,7 +109,18 @@ function parseReactionRules(hash) {
 async function execute(interaction, context) {
     const { kv } = context;
     const group = interaction.options.getSubcommandGroup(false);
-    const sub = interaction.options.getSubcommand();
+    const sub = interaction.options.getSubcommand(false);
+
+    if (sub === 'menu') {
+        await interaction.reply(
+            ephemeralOptions({
+                content: buildReactionMenuContent(),
+                components: buildReactionMenuComponents(),
+            }),
+        );
+
+        return;
+    }
 
     if (sub === 'set') {
         const targetChannel = interaction.options.getChannel('target_channel', true);
@@ -114,7 +205,106 @@ async function execute(interaction, context) {
     }
 }
 
+async function handleComponent(interaction, context) {
+    const { kv } = context;
+
+    if (!interaction.isButton()) {
+        return false;
+    }
+
+    if (interaction.customId === 'reaction_menu_show') {
+        const rules = parseReactionRules(
+            await kv.hGetAll(
+                reactionRulesKey(interaction.guildId),
+            ),
+        );
+
+        if (rules.length === 0) {
+            await interaction.reply(
+                ephemeralOptions({
+                    content: 'このサーバーにはまだ自動リアクション設定がありません。',
+                }),
+            );
+
+            return true;
+        }
+
+        const lines = rules.map(
+            (rule, index) =>
+                `${index + 1}. 対象チャンネル: <#${rule.channelId}> / ユーザー: <@${rule.userId}> / 絵文字: ${rule.emoji}`,
+        );
+
+        const chunks = splitLinesToMessages(
+            '現在の自動リアクション設定一覧:\n',
+            lines,
+        );
+
+        await interaction.reply(
+            ephemeralOptions({
+                content: chunks[0],
+            }),
+        );
+
+        for (let i = 1; i < chunks.length; i++) {
+            await interaction.followUp(
+                ephemeralOptions({
+                    content: chunks[i],
+                }),
+            );
+        }
+
+        return true;
+    }
+
+    if (interaction.customId === 'reaction_menu_allow_show') {
+        const botIds = await kv.sMembers(
+            reactionAllowedBotsKey(
+                interaction.guildId,
+            ),
+        );
+
+        if (!botIds || botIds.length === 0) {
+            await interaction.reply(
+                ephemeralOptions({
+                    content: 'このサーバーには、許可された Bot 一覧がまだありません。',
+                }),
+            );
+
+            return true;
+        }
+
+        const lines = botIds.map(
+            (id, index) =>
+                `${index + 1}. <@${id}> (${id})`,
+        );
+
+        const chunks = splitLinesToMessages(
+            '自動リアクション対象として許可されている Bot 一覧:\n',
+            lines,
+        );
+
+        await interaction.reply(
+            ephemeralOptions({
+                content: chunks[0],
+            }),
+        );
+
+        for (let i = 1; i < chunks.length; i++) {
+            await interaction.followUp(
+                ephemeralOptions({
+                    content: chunks[i],
+                }),
+            );
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
 module.exports = {
     name: 'reaction',
     execute,
+    handleComponent,
 };
