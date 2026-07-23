@@ -525,96 +525,12 @@ async function outputFilterResult(interaction, hasRole, notRole, mode, alreadyAc
 }
 
 async function execute(interaction) {
-    const group = interaction.options.getSubcommandGroup(false);
-    const sub = interaction.options.getSubcommand(false);
-
-    if (sub === 'menu') {
-        await interaction.reply(
-            ephemeralOptions({
-                content: buildRoleMenuContent(),
-                components: buildRoleMenuComponents(),
-            }),
-        );
-
-        return;
-    }
-
-    if (group === 'missing') {
-        const targetRole = interaction.options.getRole('role', true);
-
-        if (sub === 'list') {
-            await outputMissingRoleResult(
-                interaction,
-                targetRole,
-                'list',
-                false,
-            );
-            return;
-        }
-
-        if (sub === 'mention') {
-            await outputMissingRoleResult(
-                interaction,
-                targetRole,
-                'mention',
-                false,
-            );
-            return;
-        }
-    }
-
-    if (group === 'channelnever') {
-        const targetRole = interaction.options.getRole('role', true);
-        const sourceChannel = interaction.options.getChannel('source_channel', true);
-
-        if (sub === 'list') {
-            await outputChannelNeverResult(
-                interaction,
-                targetRole,
-                sourceChannel,
-                'list',
-                false,
-            );
-            return;
-        }
-
-        if (sub === 'mention') {
-            await outputChannelNeverResult(
-                interaction,
-                targetRole,
-                sourceChannel,
-                'mention',
-                false,
-            );
-            return;
-        }
-    }
-
-    if (group === 'filter') {
-        const hasRole = interaction.options.getRole('has', true);
-        const notRole = interaction.options.getRole('not', true);
-
-        if (sub === 'list') {
-            await outputFilterResult(
-                interaction,
-                hasRole,
-                notRole,
-                'list',
-                false,
-            );
-            return;
-        }
-
-        if (sub === 'mention') {
-            await outputFilterResult(
-                interaction,
-                hasRole,
-                notRole,
-                'mention',
-                false,
-            );
-        }
-    }
+    await interaction.reply(
+        ephemeralOptions({
+            content: buildRoleMenuContent(),
+            components: buildRoleMenuComponents(),
+        }),
+    );
 }
 
 async function handleComponent(interaction) {

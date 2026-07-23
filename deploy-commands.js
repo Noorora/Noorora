@@ -44,180 +44,34 @@ const commands = [
         .toJSON(),
 
     new SlashCommandBuilder()
+        .setName('forumlog')
+        .setDescription('フォーラムログ出力メニューを表示します')
+        .setDefaultMemberPermissions(
+            PermissionFlagsBits.ManageGuild,
+        )
+        .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('reaction')
+        .setDescription('自動リアクション設定メニューを表示します')
+        .setDefaultMemberPermissions(
+            PermissionFlagsBits.ManageGuild,
+        )
+        .toJSON(),
+
+    new SlashCommandBuilder()
         .setName('role')
-        .setDescription('ロール条件でメンバー一覧を表示します')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('menu')
-                .setDescription('ロール分析メニューを表示します'),
+        .setDescription('ロール分析メニューを表示します')
+        .setDefaultMemberPermissions(
+            PermissionFlagsBits.ManageGuild,
         )
-
-        .addSubcommandGroup((group) =>
-            group
-                .setName('missing')
-                .setDescription('指定したロールを持っていないメンバーを表示します')
-                .addSubcommand((subcommand) =>
-                    subcommand
-                        .setName('list')
-                        .setDescription('指定したロールを持っていないメンバー一覧を表示します')
-                        .addRoleOption((option) =>
-                            option
-                                .setName('role')
-                                .setDescription('持っていないか確認したいロール')
-                                .setRequired(true),
-                        ),
-                )
-                .addSubcommand((subcommand) =>
-                    subcommand
-                        .setName('mention')
-                        .setDescription('指定したロールを持っていないメンバーのコピペ用メンションを表示します')
-                        .addRoleOption((option) =>
-                            option
-                                .setName('role')
-                                .setDescription('持っていないか確認したいロール')
-                                .setRequired(true),
-                        ),
-                ),
-        )
-        .addSubcommandGroup((group) =>
-            group
-                .setName('channelnever')
-                .setDescription('指定したロールを持っておらず、指定したチャンネルで一度も発言していないメンバーを表示します')
-                .addSubcommand((subcommand) =>
-                    subcommand
-                        .setName('list')
-                        .setDescription('一覧表示します')
-                        .addRoleOption((option) =>
-                            option
-                                .setName('role')
-                                .setDescription('持っていないか確認したいロール')
-                                .setRequired(true),
-                        )
-                        .addChannelOption((option) =>
-                            option
-                                .setName('source_channel')
-                                .setDescription('確認したい通常テキストチャンネル')
-                                .addChannelTypes(ChannelType.GuildText)
-                                .setRequired(true),
-                        ),
-                )
-                .addSubcommand((subcommand) =>
-                    subcommand
-                        .setName('mention')
-                        .setDescription('コピペ用メンションを表示します')
-                        .addRoleOption((option) =>
-                            option
-                                .setName('role')
-                                .setDescription('持っていないか確認したいロール')
-                                .setRequired(true),
-                        )
-                        .addChannelOption((option) =>
-                            option
-                                .setName('source_channel')
-                                .setDescription('確認したい通常テキストチャンネル')
-                                .addChannelTypes(ChannelType.GuildText)
-                                .setRequired(true),
-                        ),
-                ),
-        )
-        .addSubcommandGroup((group) =>
-            group
-                .setName('filter')
-                .setDescription('特定ロールを持ち、別の特定ロールを持っていないメンバーを表示します')
-                .addSubcommand((subcommand) =>
-                    subcommand
-                        .setName('list')
-                        .setDescription('一覧表示します')
-                        .addRoleOption((option) =>
-                            option
-                                .setName('has')
-                                .setDescription('持っている必要があるロール')
-                                .setRequired(true),
-                        )
-                        .addRoleOption((option) =>
-                            option
-                                .setName('not')
-                                .setDescription('持っていてはいけないロール')
-                                .setRequired(true),
-                        ),
-                )
-                .addSubcommand((subcommand) =>
-                    subcommand
-                        .setName('mention')
-                        .setDescription('コピペ用メンションを表示します')
-                        .addRoleOption((option) =>
-                            option
-                                .setName('has')
-                                .setDescription('持っている必要があるロール')
-                                .setRequired(true),
-                        )
-                        .addRoleOption((option) =>
-                            option
-                                .setName('not')
-                                .setDescription('持っていてはいけないロール')
-                                .setRequired(true),
-                        ),
-                ),
-    )
         .toJSON(),
 
     new SlashCommandBuilder()
         .setName('rolemention')
-        .setDescription('ロールメンション転載設定を管理します')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('menu')
-                .setDescription('転送設定メニューを表示します'),
-        )
-
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('set')
-                .setDescription('ロールメンションの転載先を設定します')
-                .addRoleOption((option) =>
-                    option
-                        .setName('role')
-                        .setDescription('監視したいロール')
-                        .setRequired(true),
-                )
-                .addChannelOption((option) =>
-                    option
-                        .setName('target_channel')
-                        .setDescription('転載先のチャンネルまたはスレッド')
-                        .addChannelTypes(...textOrThreadTypes)
-                        .setRequired(true),
-                )
-                .addStringOption((option) =>
-                    option
-                        .setName('message')
-                        .setDescription('転載メッセージのテンプレート（省略時はデフォルト）')
-                        .setRequired(false),
-                ),
-        )
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('placeholders')
-                .setDescription('ロールメンション転載で使えるプレースホルダ一覧を表示します'),
-        )
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('show')
-                .setDescription('現在のロールメンション転載設定一覧を表示します'),
-        )
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('unset')
-                .setDescription('ロールメンション転載設定を削除します')
-                .addRoleOption((option) =>
-                    option
-                        .setName('role')
-                        .setDescription('削除したいロール')
-                        .setRequired(true),
-                ),
+        .setDescription('ロールメンション転載設定メニューを表示します')
+        .setDefaultMemberPermissions(
+            PermissionFlagsBits.ManageGuild,
         )
         .toJSON(),
 
@@ -228,101 +82,13 @@ const commands = [
         .toJSON(),
 
     new SlashCommandBuilder()
-        .setName('forumlog')
-        .setDescription('フォーラムの過去ログを出力します')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('menu')
-                .setDescription('フォーラムログ出力メニューを表示します'),
-    )
-
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('archive')
-                .setDescription('指定フォーラムの過去ログを出力します')
-
-                .addChannelOption((option) =>
-                    option
-                        .setName('forum')
-                        .setDescription('対象フォーラム')
-                        .addChannelTypes(ChannelType.GuildForum)
-                        .setRequired(true),
-                )
-
-                .addChannelOption((option) =>
-                    option
-                        .setName('target_channel')
-                        .setDescription('保存先チャンネル（同じサーバー用）')
-                        .addChannelTypes(
-                            ChannelType.GuildText,
-                            ChannelType.PublicThread,
-                            ChannelType.PrivateThread,
-                            ChannelType.AnnouncementThread,
-                        )
-                        .setRequired(false),
-                )
-
-                .addStringOption((option) =>
-                    option
-                        .setName('target_webhook_url')
-                        .setDescription('保存先Webhook URL（別サーバー用）')
-                        .setRequired(false),
-                )
-
-                .addBooleanOption((option) =>
-                    option
-                        .setName('include_bots')
-                        .setDescription('Bot投稿も含める')
-                        .setRequired(false),
-                ),
-        )
-        .toJSON(),
-
-    new SlashCommandBuilder()
         .setName('pins')
-        .setDescription('フォーラム内スレッドのピン留めメッセージを表示します')
-
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('menu')
-                .setDescription('ピン留め一覧メニューを表示します'),
-        )
-
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('list')
-                .setDescription('指定フォーラム内スレッドのピン留めメッセージ一覧を表示します')
-                .addChannelOption((option) =>
-                    option
-                        .setName('forum')
-                        .setDescription('対象フォーラム')
-                        .addChannelTypes(ChannelType.GuildForum)
-                        .setRequired(true),
-                ),
-        )
+        .setDescription('ピン留め一覧メニューを表示します')
         .toJSON(),
 
     new SlashCommandBuilder()
         .setName('hasrole')
-        .setDescription('指定したロールを持っているメンバーを表示します')
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('menu')
-                .setDescription('ロール所持者確認メニューを表示します'),
-        )
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('list')
-                .setDescription('指定したロールを持っているメンバー一覧を表示します')
-                .addRoleOption((option) =>
-                    option
-                        .setName('role')
-                        .setDescription('持っているメンバーを表示したいロール')
-                        .setRequired(true),
-                ),
-        )
+        .setDescription('ロール所持者確認メニューを表示します')
         .toJSON(),
 
     new SlashCommandBuilder()
