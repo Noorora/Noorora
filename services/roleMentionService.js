@@ -77,14 +77,20 @@ async function applySingleRoleMentionCleanup(kv, guildId, entry) {
     );
 
     if (entry.type === 'role_missing') {
-        return `・削除: 消失したロール <@&${entry.roleId}> → 転載先 <#${entry.targetId}>`;
+        return (
+            `・消失したロール <@&${entry.roleId}> の転載設定を削除しました。` +
+            `（転載先: <#${entry.targetId}>）`
+        );
     }
 
     if (entry.type === 'target_missing') {
-        return `・削除: ロール <@&${entry.roleId}> → 消失した転載先 <#${entry.targetId}>`;
+        return (
+            `・ロール <@&${entry.roleId}> の転載設定を削除しました。` +
+            `（理由: 転載先 <#${entry.targetId}> が見つかりません）`
+        );
     }
 
-    return `・削除: ロール <@&${entry.roleId}> の転載設定`;
+    return `・ロール <@&${entry.roleId}> の転載設定を削除しました。`;
 }
 
 async function applyRoleMentionCleanup(kv, guildId, staleEntries) {
