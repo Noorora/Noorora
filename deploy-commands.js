@@ -536,6 +536,13 @@ const commands = [
         .setName('forumlog')
         .setDescription('フォーラムの過去ログを出力します')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('menu')
+                .setDescription('フォーラムログ出力メニューを表示します'),
+    )
+
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('archive')
