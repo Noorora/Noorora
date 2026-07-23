@@ -25,7 +25,8 @@ async function handleInteractionCreate(interaction, context) {
     if (
         interaction.isButton() ||
         interaction.isModalSubmit() ||
-        interaction.isChannelSelectMenu()
+        interaction.isChannelSelectMenu() ||
+        interaction.isRoleSelectMenu()
     ) {
         if (!interaction.inGuild()) {
             await interaction.reply(
