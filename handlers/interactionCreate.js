@@ -22,7 +22,11 @@ async function handleInteractionCreate(interaction, context) {
     // =========================================================
     // ボタン / モーダル系
     // =========================================================
-    if (interaction.isButton() || interaction.isModalSubmit()) {
+    if (
+        interaction.isButton() ||
+        interaction.isModalSubmit() ||
+        interaction.isChannelSelectMenu()
+    ) {
         if (!interaction.inGuild()) {
             await interaction.reply(
                 ephemeralOptions({

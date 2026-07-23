@@ -6,6 +6,7 @@ const {
     TextInputBuilder,
     TextInputStyle,
     ChannelType,
+    ChannelSelectMenuBuilder,
 } = require('discord.js');
 
 const crypto = require('crypto');
@@ -48,8 +49,7 @@ function buildForumMenuContent() {
         '現在のフォーラム通知設定を表示します。',
         '',
         '➕ **通知追加**',
-        'フォーラム通知設定を追加します。',
-        'ボタンから追加する場合は、フォーラムIDと通知先チャンネルIDを入力します。',
+        'フォーラムと通知先を一覧から選んで、通知設定を追加します。',
         '',
         '🗑️ **通知削除**',
         'フォーラム通知設定を削除します。',
@@ -89,27 +89,42 @@ function buildForumMenuComponents() {
     ];
 }
 
-function buildForumAddModal() {
+function buildForumSelectMenu() {
+    return [
+        new ActionRowBuilder().addComponents(
+            new ChannelSelectMenuBuilder()
+                .setCustomId('forum_add_select_forum')
+                .setPlaceholder('対象フォーラムを選択してください')
+                .setChannelTypes(ChannelType.GuildForum)
+                .setMinValues(1)
+                .setMaxValues(1),
+        ),
+    ];
+}
+
+function buildTargetChannelSelectMenu(forumId) {
+    return [
+        new ActionRowBuilder().addComponents(
+            new ChannelSelectMenuBuilder()
+                .setCustomId(`forum_add_select_target:${forumId}`)
+                .setPlaceholder('通知先チャンネルまたはスレッドを選択してください')
+                .setChannelTypes(
+                    ChannelType.GuildText,
+                    ChannelType.PublicThread,
+                    ChannelType.PrivateThread,
+                    ChannelType.AnnouncementThread,
+                )
+                .setMinValues(1)
+                .setMaxValues(1),
+        ),
+    ];
+}
+
+function buildForumMessageModal(forumId, targetChannelId) {
     return new ModalBuilder()
-        .setCustomId('forum_menu_add_modal')
-        .setTitle('フォーラム通知を追加')
+        .setCustomId(`forum_add_message_modal:${forumId}:${targetChannelId}`)
+        .setTitle('カスタム文面を設定')
         .addComponents(
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('forum_ids')
-                    .setLabel('フォーラムID')
-                    .setPlaceholder('複数ある場合は 123,456,789 のようにカンマ区切り')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true),
-            ),
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('target_channel_id')
-                    .setLabel('通知先チャンネルID')
-                    .setPlaceholder('例: 123456789012345678')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true),
-            ),
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('message_template')
@@ -264,7 +279,7 @@ async function addForumTargets(interaction, context, options) {
     ];
 
     const chunks = splitLinesToMessages(
-        'フォーラム通知先を一括追加しました。\n',
+        'フォーラム通知先を追加しました。\n',
         lines,
     );
 
@@ -432,7 +447,7 @@ async function removeForumTargetCore(kv, guildId, forumId, targetChannelId) {
 }
 
 async function unsetForumTargets(interaction, context, options) {
-    const { client, kv } = context;
+    const { kv } = context;
     const {
         forum,
         targetChannel,
@@ -674,9 +689,10 @@ async function handleComponent(interaction, context) {
         }
 
         if (interaction.customId === 'forum_menu_add') {
-            await interaction.showModal(
-                buildForumAddModal(),
-            );
+            await interaction.reply(ephemeralOptions({
+                content: '対象フォーラムを選択してください。',
+                components: buildForumSelectMenu(),
+            }));
 
             return true;
         }
@@ -692,15 +708,62 @@ async function handleComponent(interaction, context) {
         return false;
     }
 
-    if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'forum_menu_add_modal') {
-            const forumIdsRaw = interaction.fields
-                .getTextInputValue('forum_ids')
-                .trim();
+    if (interaction.isChannelSelectMenu()) {
+        if (interaction.customId === 'forum_add_select_forum') {
+            const forumId = interaction.values[0];
 
-            const targetChannelId = interaction.fields
-                .getTextInputValue('target_channel_id')
-                .trim();
+            await interaction.update(ephemeralOptions({
+                content: `対象フォーラム: <#${forumId}>\n通知先チャンネルまたはスレッドを選択してください。`,
+                components: buildTargetChannelSelectMenu(forumId),
+            }));
+
+            return true;
+        }
+
+        if (interaction.customId.startsWith('forum_add_select_target:')) {
+            const forumId = interaction.customId.split(':')[1];
+            const targetChannelId = interaction.values[0];
+
+            await interaction.showModal(
+                buildForumMessageModal(
+                    forumId,
+                    targetChannelId,
+                ),
+            );
+
+            return true;
+        }
+
+        return false;
+    }
+
+    if (interaction.isModalSubmit()) {
+        if (interaction.customId.startsWith('forum_add_message_modal:')) {
+            const [, forumId, targetChannelId] = interaction.customId.split(':');
+
+            const forum = await client.channels
+                .fetch(forumId)
+                .catch(() => null);
+
+            const targetChannel = await client.channels
+                .fetch(targetChannelId)
+                .catch(() => null);
+
+            if (!forum || forum.guildId !== interaction.guildId || forum.type !== ChannelType.GuildForum) {
+                await interaction.reply(ephemeralOptions({
+                    content: '選択されたフォーラムが見つからないか、このサーバーのフォーラムではありません。',
+                }));
+
+                return true;
+            }
+
+            if (!targetChannel || targetChannel.guildId !== interaction.guildId) {
+                await interaction.reply(ephemeralOptions({
+                    content: '選択された通知先チャンネルが見つからないか、このサーバーのチャンネルではありません。',
+                }));
+
+                return true;
+            }
 
             const messageTemplateRaw = interaction.fields
                 .getTextInputValue('message_template')
@@ -708,24 +771,12 @@ async function handleComponent(interaction, context) {
 
             const messageTemplate = messageTemplateRaw || null;
 
-            const targetChannel = await client.channels
-                .fetch(targetChannelId)
-                .catch(() => null);
-
-            if (!targetChannel || targetChannel.guildId !== interaction.guildId) {
-                await interaction.reply(ephemeralOptions({
-                    content: '通知先チャンネルIDが正しくないか、このサーバーのチャンネルではありません。',
-                }));
-
-                return true;
-            }
-
             await addForumTargets(
                 interaction,
                 context,
                 {
-                    forum: null,
-                    forumIdsRaw,
+                    forum,
+                    forumIdsRaw: null,
                     targetChannel,
                     messageTemplate,
                     useEphemeral: true,
