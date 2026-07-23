@@ -70,7 +70,12 @@ const commands = [
                         .setName('message')
                         .setDescription('通知メッセージのテンプレート（省略時はデフォルト）')
                         .setRequired(false),
-                ),
+            ),
+                .addSubcommand((subcommand) =>
+                    subcommand
+                        .setName('menu')
+                        .setDescription('フォーラム通知設定メニューを表示します'),
+                )
         )
         .addSubcommand((subcommand) =>
             subcommand

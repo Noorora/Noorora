@@ -1,10 +1,31 @@
+const {
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    ChannelType,
+} = require('discord.js');
+
 const crypto = require('crypto');
-const { ChannelType } = require('discord.js');
+
 const { ephemeralOptions } = require('../utils/ephemeral');
 const { splitLinesToMessages } = require('../utils/messageSplit');
-const { buildCleanupChoiceButtons, buildStaleSummaryContent } = require('../components/cleanupButtons');
-const { pendingCleanupKey, forumTargetsKey, forumIndexKey, forumMessageMapKey } = require('../keys/redisKeys');
+const {
+    buildCleanupChoiceButtons,
+    buildStaleSummaryContent,
+} = require('../components/cleanupButtons');
+
+const {
+    pendingCleanupKey,
+    forumTargetsKey,
+    forumIndexKey,
+    forumMessageMapKey,
+} = require('../keys/redisKeys');
+
 const { buildForumPlaceholdersHelp } = require('../templates/forumTemplate');
+
 const {
     resolveForumIds,
     collectForumShowData,
@@ -17,9 +38,563 @@ const allowedTargetTypes = [
     ChannelType.AnnouncementThread,
 ];
 
-async function execute(interaction, context) {
+function buildForumMenuContent() {
+    return [
+        '## 📚 フォーラム通知設定',
+        '',
+        '操作を選んでください。',
+        '',
+        '📋 **一覧表示**',
+        '現在のフォーラム通知設定を表示します。',
+        '',
+        '➕ **通知追加**',
+        'フォーラム通知設定を追加します。',
+        'ボタンから追加する場合は、フォーラムIDと通知先チャンネルIDを入力します。',
+        '',
+        '🗑️ **通知削除**',
+        'フォーラム通知設定を削除します。',
+        '',
+        '🧩 **プレースホルダ**',
+        'カスタム文面で使える変数を表示します。',
+    ].join('\n');
+}
+
+function buildForumMenuComponents() {
+    return [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('forum_menu_show')
+                .setLabel('一覧表示')
+                .setEmoji('📋')
+                .setStyle(ButtonStyle.Primary),
+
+            new ButtonBuilder()
+                .setCustomId('forum_menu_add')
+                .setLabel('通知追加')
+                .setEmoji('➕')
+                .setStyle(ButtonStyle.Success),
+
+            new ButtonBuilder()
+                .setCustomId('forum_menu_unset')
+                .setLabel('通知削除')
+                .setEmoji('🗑️')
+                .setStyle(ButtonStyle.Danger),
+
+            new ButtonBuilder()
+                .setCustomId('forum_menu_placeholders')
+                .setLabel('プレースホルダ')
+                .setEmoji('🧩')
+                .setStyle(ButtonStyle.Secondary),
+        ),
+    ];
+}
+
+function buildForumAddModal() {
+    return new ModalBuilder()
+        .setCustomId('forum_menu_add_modal')
+        .setTitle('フォーラム通知を追加')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('forum_ids')
+                    .setLabel('フォーラムID')
+                    .setPlaceholder('複数ある場合は 123,456,789 のようにカンマ区切り')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true),
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('target_channel_id')
+                    .setLabel('通知先チャンネルID')
+                    .setPlaceholder('例: 123456789012345678')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true),
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('message_template')
+                    .setLabel('カスタム文面')
+                    .setPlaceholder('{forum} に新しいスレッド！\\nスレ主: {author}{newcomerMark}\\n{link}')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setRequired(false),
+            ),
+        );
+}
+
+function buildForumUnsetModal() {
+    return new ModalBuilder()
+        .setCustomId('forum_menu_unset_modal')
+        .setTitle('フォーラム通知を削除')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('forum_id')
+                    .setLabel('フォーラムID')
+                    .setPlaceholder('空欄可。通知先だけ指定すると、その通知先に紐づく設定を削除')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(false),
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('target_channel_id')
+                    .setLabel('通知先チャンネルID')
+                    .setPlaceholder('空欄可。フォーラムだけ指定すると、そのフォーラムの設定を全削除')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(false),
+            ),
+        );
+}
+
+async function replyChunks(interaction, header, lines, useEphemeral = false) {
+    const chunks = splitLinesToMessages(header, lines);
+
+    if (useEphemeral) {
+        await interaction.reply(ephemeralOptions({
+            content: chunks[0],
+        }));
+
+        for (let i = 1; i < chunks.length; i++) {
+            await interaction.followUp(ephemeralOptions({
+                content: chunks[i],
+            }));
+        }
+
+        return;
+    }
+
+    await interaction.reply(chunks[0]);
+
+    for (let i = 1; i < chunks.length; i++) {
+        await interaction.followUp(chunks[i]);
+    }
+}
+
+async function addForumTargets(interaction, context, options) {
     const { client, kv } = context;
+    const {
+        forum,
+        forumIdsRaw,
+        targetChannel,
+        messageTemplate,
+        useEphemeral = false,
+    } = options;
+
+    if ((forum && forumIdsRaw) || (!forum && !forumIdsRaw)) {
+        const content = 'forum か forum_ids のどちらか片方だけを指定してください。';
+
+        if (useEphemeral) {
+            await interaction.reply(ephemeralOptions({ content }));
+        } else {
+            await interaction.reply(content);
+        }
+
+        return;
+    }
+
+    if (!allowedTargetTypes.includes(targetChannel.type)) {
+        const content = 'target_channel にはテキストチャンネルまたは既存スレッドを指定してください。';
+
+        if (useEphemeral) {
+            await interaction.reply(ephemeralOptions({ content }));
+        } else {
+            await interaction.reply(content);
+        }
+
+        return;
+    }
+
+    const resolved = await resolveForumIds(
+        client,
+        interaction.guildId,
+        forum,
+        forumIdsRaw,
+    );
+
+    if (resolved.valid.length === 0) {
+        const failLines = resolved.invalid.map((item) => {
+            return `・${item.input} → ${item.reason}`;
+        });
+
+        await replyChunks(
+            interaction,
+            'フォーラム通知先を追加できませんでした。\n',
+            failLines.length > 0 ? failLines : ['・有効なフォーラムがありませんでした'],
+            useEphemeral,
+        );
+
+        return;
+    }
+
+    const successLines = [];
+    const failLines = [];
+
+    for (const forumId of resolved.valid) {
+        await kv.sAdd(
+            forumTargetsKey(interaction.guildId, forumId),
+            targetChannel.id,
+        );
+
+        await kv.sAdd(
+            forumIndexKey(interaction.guildId),
+            forumId,
+        );
+
+        if (messageTemplate) {
+            await kv.hSet(
+                forumMessageMapKey(interaction.guildId, forumId),
+                targetChannel.id,
+                messageTemplate,
+            );
+        }
+
+        successLines.push(`・<#${forumId}> → <#${targetChannel.id}>`);
+    }
+
+    for (const item of resolved.invalid) {
+        failLines.push(`・${item.input} → ${item.reason}`);
+    }
+
+    const lines = [
+        `通知先: <#${targetChannel.id}>`,
+        `カスタムメッセージ: ${messageTemplate ? 'あり' : 'なし'}`,
+        '',
+        '成功:',
+        ...successLines,
+        ...(failLines.length ? ['', '失敗:', ...failLines] : []),
+    ];
+
+    const chunks = splitLinesToMessages(
+        'フォーラム通知先を一括追加しました。\n',
+        lines,
+    );
+
+    let firstContent = chunks[0];
+
+    if (messageTemplate) {
+        firstContent +=
+            `\n設定メッセージ:\n\`\`\`txt\n${messageTemplate.replaceAll('\\n', '\n')}\n\`\`\``;
+    }
+
+    if (useEphemeral) {
+        await interaction.reply(ephemeralOptions({
+            content: firstContent,
+        }));
+
+        for (let i = 1; i < chunks.length; i++) {
+            await interaction.followUp(ephemeralOptions({
+                content: chunks[i],
+            }));
+        }
+
+        return;
+    }
+
+    await interaction.reply(firstContent);
+
+    for (let i = 1; i < chunks.length; i++) {
+        await interaction.followUp(chunks[i]);
+    }
+}
+
+async function showForumSettings(interaction, context, useEphemeral = false) {
+    const { client, kv } = context;
+
+    const {
+        validLines,
+        staleEntries,
+    } = await collectForumShowData(
+        client,
+        kv,
+        interaction.guildId,
+    );
+
+    if (validLines.length === 0 && staleEntries.length === 0) {
+        const content = 'このサーバーにはまだフォーラム通知設定がありません。';
+
+        if (useEphemeral) {
+            await interaction.reply(ephemeralOptions({ content }));
+        } else {
+            await interaction.reply(content);
+        }
+
+        return;
+    }
+
+    if (staleEntries.length === 0) {
+        await replyChunks(
+            interaction,
+            '現在のフォーラム通知設定一覧:\n',
+            validLines,
+            useEphemeral,
+        );
+
+        return;
+    }
+
+    const staleLines = staleEntries.map((entry) => {
+        return entry.type === 'forum_missing'
+            ? `消失したフォーラム: <#${entry.forumId}>`
+            : `フォーラム <#${entry.forumId}> → 消失した通知先 <#${entry.targetId}>`;
+    });
+
+    const token = crypto.randomUUID();
+
+    await kv.setEx(
+        pendingCleanupKey(token),
+        900,
+        JSON.stringify({
+            kind: 'forum',
+            guildId: interaction.guildId,
+            validLines,
+            staleEntries,
+            staleLines,
+        }),
+    );
+
+    await interaction.reply(ephemeralOptions({
+        content: buildStaleSummaryContent('forum', validLines, staleLines),
+        components: buildCleanupChoiceButtons('forum', token),
+    }));
+
+    if (validLines.length > 0) {
+        const validChunks = splitLinesToMessages(
+            '有効な設定一覧:\n',
+            validLines,
+        );
+
+        for (const chunk of validChunks) {
+            await interaction.followUp(ephemeralOptions({
+                content: chunk,
+            }));
+        }
+    }
+
+    const staleChunks = splitLinesToMessages(
+        '削除候補一覧:\n',
+        staleLines.map((line, index) => `${index + 1}. ${line}`),
+    );
+
+    for (const chunk of staleChunks) {
+        await interaction.followUp(ephemeralOptions({
+            content: chunk,
+        }));
+    }
+}
+
+async function removeForumTarget(interaction, kv, guildId, forumId, targetChannelId, useEphemeral = false) {
+    const removed = await removeForumTargetCore(
+        kv,
+        guildId,
+        forumId,
+        targetChannelId,
+    );
+
+    const content = removed
+        ? `フォーラム <#${forumId}> から通知先 <#${targetChannelId}> を削除しました。`
+        : `フォーラム <#${forumId}> に、通知先 <#${targetChannelId}> の設定は見つかりませんでした。`;
+
+    if (useEphemeral) {
+        await interaction.reply(ephemeralOptions({ content }));
+    } else {
+        await interaction.reply(content);
+    }
+}
+
+async function removeForumTargetCore(kv, guildId, forumId, targetChannelId) {
+    const targetKey = forumTargetsKey(guildId, forumId);
+    const messageKey = forumMessageMapKey(guildId, forumId);
+
+    const removed = await kv.sRem(
+        targetKey,
+        targetChannelId,
+    );
+
+    if (!removed) return false;
+
+    await kv.hDel(
+        messageKey,
+        targetChannelId,
+    );
+
+    const remainingTargets = await kv.sMembers(targetKey);
+
+    if (!remainingTargets || remainingTargets.length === 0) {
+        await kv.del(targetKey);
+        await kv.del(messageKey);
+
+        await kv.sRem(
+            forumIndexKey(guildId),
+            forumId,
+        );
+    }
+
+    return true;
+}
+
+async function unsetForumTargets(interaction, context, options) {
+    const { client, kv } = context;
+    const {
+        forum,
+        targetChannel,
+        useEphemeral = false,
+    } = options;
+
+    const guildId = interaction.guildId;
+
+    if (!forum && !targetChannel) {
+        const content = 'forum か target_channel のどちらかは指定してください。';
+
+        if (useEphemeral) {
+            await interaction.reply(ephemeralOptions({ content }));
+        } else {
+            await interaction.reply(content);
+        }
+
+        return;
+    }
+
+    if (forum && forum.type !== ChannelType.GuildForum) {
+        const content = 'forum にはフォーラムチャンネルを指定してください。';
+
+        if (useEphemeral) {
+            await interaction.reply(ephemeralOptions({ content }));
+        } else {
+            await interaction.reply(content);
+        }
+
+        return;
+    }
+
+    if (targetChannel && !allowedTargetTypes.includes(targetChannel.type)) {
+        const content = 'target_channel にはテキストチャンネルまたはスレッドを指定してください。';
+
+        if (useEphemeral) {
+            await interaction.reply(ephemeralOptions({ content }));
+        } else {
+            await interaction.reply(content);
+        }
+
+        return;
+    }
+
+    const forumIds = await kv.sMembers(
+        forumIndexKey(guildId),
+    );
+
+    if (!forumIds || forumIds.length === 0) {
+        const content = 'このサーバーにはまだフォーラム通知設定がありません。';
+
+        if (useEphemeral) {
+            await interaction.reply(ephemeralOptions({ content }));
+        } else {
+            await interaction.reply(content);
+        }
+
+        return;
+    }
+
+    if (forum && targetChannel) {
+        await removeForumTarget(
+            interaction,
+            kv,
+            guildId,
+            forum.id,
+            targetChannel.id,
+            useEphemeral,
+        );
+
+        return;
+    }
+
+    if (forum && !targetChannel) {
+        const targetKey = forumTargetsKey(guildId, forum.id);
+        const messageKey = forumMessageMapKey(guildId, forum.id);
+
+        const targetIds = await kv.sMembers(targetKey);
+
+        if (!targetIds || targetIds.length === 0) {
+            const content = `そのフォーラムの設定は見つかりませんでした: <#${forum.id}>`;
+
+            if (useEphemeral) {
+                await interaction.reply(ephemeralOptions({ content }));
+            } else {
+                await interaction.reply(content);
+            }
+
+            return;
+        }
+
+        await kv.del(targetKey);
+        await kv.del(messageKey);
+
+        await kv.sRem(
+            forumIndexKey(guildId),
+            forum.id,
+        );
+
+        const content = `フォーラム <#${forum.id}> に紐づく通知先をすべて削除しました。`;
+
+        if (useEphemeral) {
+            await interaction.reply(ephemeralOptions({ content }));
+        } else {
+            await interaction.reply(content);
+        }
+
+        return;
+    }
+
+    if (!forum && targetChannel) {
+        let removedCount = 0;
+        const removedLines = [];
+
+        for (const forumId of forumIds) {
+            const removed = await removeForumTargetCore(
+                kv,
+                guildId,
+                forumId,
+                targetChannel.id,
+            );
+
+            if (removed) {
+                removedCount += 1;
+                removedLines.push(
+                    `・フォーラム <#${forumId}> から通知先 <#${targetChannel.id}> を削除`,
+                );
+            }
+        }
+
+        if (removedCount === 0) {
+            const content = `通知先 <#${targetChannel.id}> に紐づく設定は見つかりませんでした。`;
+
+            if (useEphemeral) {
+                await interaction.reply(ephemeralOptions({ content }));
+            } else {
+                await interaction.reply(content);
+            }
+
+            return;
+        }
+
+        await replyChunks(
+            interaction,
+            `通知先 <#${targetChannel.id}> に紐づく設定を ${removedCount} 件削除しました。\n`,
+            removedLines,
+            useEphemeral,
+        );
+    }
+}
+
+async function execute(interaction, context) {
     const sub = interaction.options.getSubcommand();
+
+    if (sub === 'menu') {
+        await interaction.reply(ephemeralOptions({
+            content: buildForumMenuContent(),
+            components: buildForumMenuComponents(),
+        }));
+
+        return;
+    }
 
     if (sub === 'channel') {
         const forum = interaction.options.getChannel('forum', false);
@@ -27,184 +602,193 @@ async function execute(interaction, context) {
         const targetChannel = interaction.options.getChannel('target_channel', true);
         const messageTemplate = interaction.options.getString('message', false);
 
-        if ((forum && forumIdsRaw) || (!forum && !forumIdsRaw)) {
-            await interaction.reply('forum か forum_ids のどちらか片方だけを指定してください。');
-            return;
-        }
+        await addForumTargets(
+            interaction,
+            context,
+            {
+                forum,
+                forumIdsRaw,
+                targetChannel,
+                messageTemplate,
+                useEphemeral: false,
+            },
+        );
 
-        if (!allowedTargetTypes.includes(targetChannel.type)) {
-            await interaction.reply('target_channel にはテキストチャンネルまたは既存スレッドを指定してください。');
-            return;
-        }
-
-        const resolved = await resolveForumIds(client, interaction.guildId, forum, forumIdsRaw);
-        if (resolved.valid.length === 0) {
-            const failLines = resolved.invalid.map((item) => `・${item.input} → ${item.reason}`);
-            const chunks = splitLinesToMessages('フォーラム通知先を追加できませんでした。\n', failLines.length > 0 ? failLines : ['・有効なフォーラムがありませんでした']);
-            await interaction.reply(chunks[0]);
-            for (let i = 1; i < chunks.length; i++) await interaction.followUp(chunks[i]);
-            return;
-        }
-
-        const successLines = [];
-        const failLines = [];
-        for (const forumId of resolved.valid) {
-            await kv.sAdd(forumTargetsKey(interaction.guildId, forumId), targetChannel.id);
-            await kv.sAdd(forumIndexKey(interaction.guildId), forumId);
-            if (messageTemplate) {
-                await kv.hSet(forumMessageMapKey(interaction.guildId, forumId), targetChannel.id, messageTemplate);
-            }
-            successLines.push(`・<#${forumId}> → <#${targetChannel.id}>`);
-        }
-        for (const item of resolved.invalid) failLines.push(`・${item.input} → ${item.reason}`);
-
-        const lines = [
-            `通知先: <#${targetChannel.id}>`,
-            `カスタムメッセージ: ${messageTemplate ? 'あり' : 'なし'}`,
-            '',
-            '成功:',
-            ...successLines,
-            ...(failLines.length ? ['', '失敗:', ...failLines] : []),
-        ];
-        const chunks = splitLinesToMessages('フォーラム通知先を一括追加しました。\n', lines);
-        let firstContent = chunks[0];
-        if (messageTemplate) {
-            firstContent += `\n設定メッセージ:\n\`\`\`txt\n${messageTemplate.replaceAll('\\n', '\n')}\n\`\`\``;
-        }
-        await interaction.reply(firstContent);
-        for (let i = 1; i < chunks.length; i++) await interaction.followUp(chunks[i]);
         return;
     }
 
     if (sub === 'placeholders') {
-        await interaction.reply(ephemeralOptions({ content: buildForumPlaceholdersHelp() }));
+        await interaction.reply(ephemeralOptions({
+            content: buildForumPlaceholdersHelp(),
+        }));
+
         return;
     }
 
     if (sub === 'show') {
-        const { validLines, staleEntries } = await collectForumShowData(client, kv, interaction.guildId);
-        if (validLines.length === 0 && staleEntries.length === 0) {
-            await interaction.reply('このサーバーにはまだフォーラム通知設定がありません。');
-            return;
-        }
+        await showForumSettings(
+            interaction,
+            context,
+            false,
+        );
 
-        if (staleEntries.length === 0) {
-            const chunks = splitLinesToMessages('現在のフォーラム通知設定一覧:\n', validLines);
-            await interaction.reply(chunks[0]);
-            for (let i = 1; i < chunks.length; i++) await interaction.followUp(chunks[i]);
-            return;
-        }
-
-        const staleLines = staleEntries.map((entry) => entry.type === 'forum_missing'
-            ? `消失したフォーラム: <#${entry.forumId}>`
-            : `フォーラム <#${entry.forumId}> → 消失した通知先 <#${entry.targetId}>`);
-        const token = crypto.randomUUID();
-        await kv.setEx(pendingCleanupKey(token), 900, JSON.stringify({ kind: 'forum', guildId: interaction.guildId, validLines, staleEntries, staleLines }));
-
-        await interaction.reply(ephemeralOptions({
-            content: buildStaleSummaryContent('forum', validLines, staleLines),
-            components: buildCleanupChoiceButtons('forum', token),
-        }));
-        if (validLines.length > 0) {
-            const validChunks = splitLinesToMessages('有効な設定一覧:\n', validLines);
-            for (const chunk of validChunks) await interaction.followUp(ephemeralOptions({ content: chunk }));
-        }
-        const staleChunks = splitLinesToMessages('削除候補一覧:\n', staleLines.map((line, index) => `${index + 1}. ${line}`));
-        for (const chunk of staleChunks) await interaction.followUp(ephemeralOptions({ content: chunk }));
         return;
     }
 
     if (sub === 'unset') {
         const forum = interaction.options.getChannel('forum', false);
         const targetChannel = interaction.options.getChannel('target_channel', false);
-        const guildId = interaction.guildId;
 
-        if (!forum && !targetChannel) {
-            await interaction.reply('forum か target_channel のどちらかは指定してください。');
-            return;
-        }
-        if (forum && forum.type !== ChannelType.GuildForum) {
-            await interaction.reply('forum にはフォーラムチャンネルを指定してください。');
-            return;
-        }
-        if (targetChannel && !allowedTargetTypes.includes(targetChannel.type)) {
-            await interaction.reply('target_channel にはテキストチャンネルまたはスレッドを指定してください。');
-            return;
-        }
-
-        const forumIds = await kv.sMembers(forumIndexKey(guildId));
-        if (!forumIds || forumIds.length === 0) {
-            await interaction.reply('このサーバーにはまだフォーラム通知設定がありません。');
-            return;
-        }
-
-        if (forum && targetChannel) {
-            await removeForumTarget(interaction, kv, guildId, forum.id, targetChannel.id);
-            return;
-        }
-
-        if (forum && !targetChannel) {
-            const targetKey = forumTargetsKey(guildId, forum.id);
-            const messageKey = forumMessageMapKey(guildId, forum.id);
-            const targetIds = await kv.sMembers(targetKey);
-            if (!targetIds || targetIds.length === 0) {
-                await interaction.reply(`そのフォーラムの設定は見つかりませんでした: <#${forum.id}>`);
-                return;
-            }
-            await kv.del(targetKey);
-            await kv.del(messageKey);
-            await kv.sRem(forumIndexKey(guildId), forum.id);
-            await interaction.reply(`フォーラム <#${forum.id}> に紐づく通知先をすべて削除しました。`);
-            return;
-        }
-
-        if (!forum && targetChannel) {
-            let removedCount = 0;
-            const removedLines = [];
-            for (const forumId of forumIds) {
-                const removed = await removeForumTargetCore(kv, guildId, forumId, targetChannel.id);
-                if (removed) {
-                    removedCount += 1;
-                    removedLines.push(`・フォーラム <#${forumId}> から通知先 <#${targetChannel.id}> を削除`);
-                }
-            }
-            if (removedCount === 0) {
-                await interaction.reply(`通知先 <#${targetChannel.id}> に紐づく設定は見つかりませんでした。`);
-                return;
-            }
-            const chunks = splitLinesToMessages(`通知先 <#${targetChannel.id}> に紐づく設定を ${removedCount} 件削除しました。\n`, removedLines);
-            await interaction.reply(chunks[0]);
-            for (let i = 1; i < chunks.length; i++) await interaction.followUp(chunks[i]);
-        }
+        await unsetForumTargets(
+            interaction,
+            context,
+            {
+                forum,
+                targetChannel,
+                useEphemeral: false,
+            },
+        );
     }
 }
 
-async function removeForumTarget(interaction, kv, guildId, forumId, targetChannelId) {
-    const removed = await removeForumTargetCore(kv, guildId, forumId, targetChannelId);
-    if (!removed) {
-        await interaction.reply(`フォーラム <#${forumId}> に、通知先 <#${targetChannelId}> の設定は見つかりませんでした。`);
-        return;
-    }
-    await interaction.reply(`フォーラム <#${forumId}> から通知先 <#${targetChannelId}> を削除しました。`);
-}
+async function handleComponent(interaction, context) {
+    const { client } = context;
 
-async function removeForumTargetCore(kv, guildId, forumId, targetChannelId) {
-    const targetKey = forumTargetsKey(guildId, forumId);
-    const messageKey = forumMessageMapKey(guildId, forumId);
-    const removed = await kv.sRem(targetKey, targetChannelId);
-    if (!removed) return false;
+    if (interaction.isButton()) {
+        if (interaction.customId === 'forum_menu_show') {
+            await showForumSettings(
+                interaction,
+                context,
+                true,
+            );
 
-    await kv.hDel(messageKey, targetChannelId);
-    const remainingTargets = await kv.sMembers(targetKey);
-    if (!remainingTargets || remainingTargets.length === 0) {
-        await kv.del(targetKey);
-        await kv.del(messageKey);
-        await kv.sRem(forumIndexKey(guildId), forumId);
+            return true;
+        }
+
+        if (interaction.customId === 'forum_menu_placeholders') {
+            await interaction.reply(ephemeralOptions({
+                content: buildForumPlaceholdersHelp(),
+            }));
+
+            return true;
+        }
+
+        if (interaction.customId === 'forum_menu_add') {
+            await interaction.showModal(
+                buildForumAddModal(),
+            );
+
+            return true;
+        }
+
+        if (interaction.customId === 'forum_menu_unset') {
+            await interaction.showModal(
+                buildForumUnsetModal(),
+            );
+
+            return true;
+        }
+
+        return false;
     }
-    return true;
+
+    if (interaction.isModalSubmit()) {
+        if (interaction.customId === 'forum_menu_add_modal') {
+            const forumIdsRaw = interaction.fields
+                .getTextInputValue('forum_ids')
+                .trim();
+
+            const targetChannelId = interaction.fields
+                .getTextInputValue('target_channel_id')
+                .trim();
+
+            const messageTemplateRaw = interaction.fields
+                .getTextInputValue('message_template')
+                .trim();
+
+            const messageTemplate = messageTemplateRaw || null;
+
+            const targetChannel = await client.channels
+                .fetch(targetChannelId)
+                .catch(() => null);
+
+            if (!targetChannel || targetChannel.guildId !== interaction.guildId) {
+                await interaction.reply(ephemeralOptions({
+                    content: '通知先チャンネルIDが正しくないか、このサーバーのチャンネルではありません。',
+                }));
+
+                return true;
+            }
+
+            await addForumTargets(
+                interaction,
+                context,
+                {
+                    forum: null,
+                    forumIdsRaw,
+                    targetChannel,
+                    messageTemplate,
+                    useEphemeral: true,
+                },
+            );
+
+            return true;
+        }
+
+        if (interaction.customId === 'forum_menu_unset_modal') {
+            const forumIdRaw = interaction.fields
+                .getTextInputValue('forum_id')
+                .trim();
+
+            const targetChannelIdRaw = interaction.fields
+                .getTextInputValue('target_channel_id')
+                .trim();
+
+            const forum = forumIdRaw
+                ? await client.channels.fetch(forumIdRaw).catch(() => null)
+                : null;
+
+            const targetChannel = targetChannelIdRaw
+                ? await client.channels.fetch(targetChannelIdRaw).catch(() => null)
+                : null;
+
+            if (forumIdRaw && (!forum || forum.guildId !== interaction.guildId)) {
+                await interaction.reply(ephemeralOptions({
+                    content: 'フォーラムIDが正しくないか、このサーバーのフォーラムではありません。',
+                }));
+
+                return true;
+            }
+
+            if (targetChannelIdRaw && (!targetChannel || targetChannel.guildId !== interaction.guildId)) {
+                await interaction.reply(ephemeralOptions({
+                    content: '通知先チャンネルIDが正しくないか、このサーバーのチャンネルではありません。',
+                }));
+
+                return true;
+            }
+
+            await unsetForumTargets(
+                interaction,
+                context,
+                {
+                    forum,
+                    targetChannel,
+                    useEphemeral: true,
+                },
+            );
+
+            return true;
+        }
+
+        return false;
+    }
+
+    return false;
 }
 
 module.exports = {
     name: 'forum',
     execute,
+    handleComponent,
 };
