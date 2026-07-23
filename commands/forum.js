@@ -605,70 +605,10 @@ async function unsetForumTargets(interaction, context, options) {
 }
 
 async function execute(interaction, context) {
-    const sub = interaction.options.getSubcommand();
-
-    if (sub === 'menu') {
-        await interaction.reply(ephemeralOptions({
-            content: buildForumMenuContent(),
-            components: buildForumMenuComponents(),
-        }));
-
-        return;
-    }
-
-    if (sub === 'channel') {
-        const forum = interaction.options.getChannel('forum', false);
-        const forumIdsRaw = interaction.options.getString('forum_ids', false);
-        const targetChannel = interaction.options.getChannel('target_channel', true);
-        const messageTemplate = interaction.options.getString('message', false);
-
-        await addForumTargets(
-            interaction,
-            context,
-            {
-                forum,
-                forumIdsRaw,
-                targetChannel,
-                messageTemplate,
-                useEphemeral: false,
-            },
-        );
-
-        return;
-    }
-
-    if (sub === 'placeholders') {
-        await interaction.reply(ephemeralOptions({
-            content: buildForumPlaceholdersHelp(),
-        }));
-
-        return;
-    }
-
-    if (sub === 'show') {
-        await showForumSettings(
-            interaction,
-            context,
-            false,
-        );
-
-        return;
-    }
-
-    if (sub === 'unset') {
-        const forum = interaction.options.getChannel('forum', false);
-        const targetChannel = interaction.options.getChannel('target_channel', false);
-
-        await unsetForumTargets(
-            interaction,
-            context,
-            {
-                forum,
-                targetChannel,
-                useEphemeral: false,
-            },
-        );
-    }
+    await interaction.reply(ephemeralOptions({
+        content: buildForumMenuContent(),
+        components: buildForumMenuComponents(),
+    }));
 }
 
 async function handleComponent(interaction, context) {
