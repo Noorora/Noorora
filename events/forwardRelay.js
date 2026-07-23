@@ -208,14 +208,33 @@ async function handleForwardRelay(message, context) {
 
         let body = message.content?.trim() || '';
         body = await normalizeCustomEmojiText(message, body);
-        body = `${body}${body ? '\n' : ''}${message.url}`;
 
-        const files = message.attachments.size > 0
-            ? [...message.attachments.values()].map((attachment) => ({
-                attachment: attachment.url,
-                name: attachment.name || 'attachment',
-            }))
+        const attachmentLines = message.attachments.size > 0
+            ? [...message.attachments.values()].map((attachment) => {
+                return `添付: ${attachment.url}`;
+            })
             : [];
+
+        const bodyParts = [];
+
+        if (body) {
+            bodyParts.push(body);
+        }
+
+        bodyParts.push(message.url);
+
+        if (attachmentLines.length > 0) {
+            bodyParts.push('');
+            bodyParts.push(...attachmentLines);
+        }
+
+        body = bodyParts.join('\n');
+
+        if (body.length > 1900) {
+            body = `${body.slice(0, 1900)}\n...（長文のため省略）`;
+        }
+
+        const files = [];
 
         const {
             webhookUsername,
