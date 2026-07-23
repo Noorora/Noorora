@@ -32,6 +32,7 @@ const {
 
 const {
     collectRoleMentionShowData,
+    applyRoleMentionCleanup,
 } = require('../services/roleMentionService');
 
 const allowedTargetTypes = [
@@ -211,7 +212,7 @@ async function setRoleMentionTarget(interaction, context, role, targetChannel, m
 async function showRoleMentionSettings(interaction, context) {
     const { client, kv } = context;
 
-    const {
+    let {
         validLines,
         staleEntries,
     } = await collectRoleMentionShowData(
@@ -220,73 +221,64 @@ async function showRoleMentionSettings(interaction, context) {
         interaction.guildId,
     );
 
-    if (validLines.length === 0 && staleEntries.length === 0) {
+    const removedLines = [];
+
+    if (staleEntries.length > 0) {
+        const cleanedLines = await applyRoleMentionCleanup(
+            kv,
+            interaction.guildId,
+            staleEntries,
+        );
+
+        removedLines.push(...cleanedLines);
+
+        const refreshed = await collectRoleMentionShowData(
+            client,
+            kv,
+            interaction.guildId,
+        );
+
+        validLines = refreshed.validLines;
+        staleEntries = refreshed.staleEntries;
+    }
+
+    if (
+        validLines.length === 0 &&
+        removedLines.length === 0
+    ) {
         await interaction.reply(ephemeralOptions({
             content: 'このサーバーにはまだロールメンション転載設定がありません。',
         }));
         return;
     }
 
-    if (staleEntries.length === 0) {
-        await replyChunks(
-            interaction,
-            '現在のロールメンション転載設定一覧:\n',
-            validLines,
-        );
-        return;
+    const lines = [];
+
+    if (removedLines.length > 0) {
+        lines.push('## 削除した無効な設定');
+        lines.push(...removedLines);
+        lines.push('');
     }
 
-    const staleLines = staleEntries.map((entry) => {
-        return `ロール <@&${entry.roleId}> → 消失した転載先 <#${entry.targetId}>`;
-    });
+    if (validLines.length > 0) {
+        lines.push('## 現在のロールメンション転載設定一覧');
+        lines.push(...validLines);
+    } else {
+        lines.push('現在有効なロールメンション転載設定はありません。');
+    }
 
-    const token = crypto.randomUUID();
-
-    await kv.setEx(
-        pendingCleanupKey(token),
-        900,
-        JSON.stringify({
-            kind: 'rolemention',
-            guildId: interaction.guildId,
-            validLines,
-            staleEntries,
-            staleLines,
-        }),
+    const chunks = splitLinesToMessages(
+        '',
+        lines,
     );
 
     await interaction.reply(ephemeralOptions({
-        content: buildStaleSummaryContent(
-            'rolemention',
-            validLines,
-            staleLines,
-        ),
-        components: buildCleanupChoiceButtons(
-            'rolemention',
-            token,
-        ),
+        content: chunks[0],
     }));
 
-    if (validLines.length > 0) {
-        const validChunks = splitLinesToMessages(
-            '有効な設定一覧:\n',
-            validLines,
-        );
-
-        for (const chunk of validChunks) {
-            await interaction.followUp(ephemeralOptions({
-                content: chunk,
-            }));
-        }
-    }
-
-    const staleChunks = splitLinesToMessages(
-        '削除候補一覧:\n',
-        staleLines.map((line, index) => `${index + 1}. ${line}`),
-    );
-
-    for (const chunk of staleChunks) {
+    for (let i = 1; i < chunks.length; i++) {
         await interaction.followUp(ephemeralOptions({
-            content: chunk,
+            content: chunks[i],
         }));
     }
 }
