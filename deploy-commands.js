@@ -313,6 +313,11 @@ const commands = [
                                 .setRequired(true),
                         ),
                 ),
+    )
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('menu')
+                .setDescription('転送設定メニューを表示します'),
         )
         .toJSON(),
 
