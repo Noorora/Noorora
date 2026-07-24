@@ -7,6 +7,7 @@ const {
 
 const { ephemeralOptions } = require('../utils/ephemeral');
 const { splitLinesToMessages } = require('../utils/messageSplit');
+const { addAuditLog } = require('../utils/auditLog');
 
 function buildHasRoleMenuContent() {
     return [
@@ -43,12 +44,19 @@ function buildHasRoleRoleSelectMenu() {
     ];
 }
 
-async function showMembersWithRole(interaction, targetRole, alreadyAcknowledged = false) {
+async function showMembersWithRole(interaction, targetRole, alreadyAcknowledged = false, kv = null) {
     await interaction.guild.members.fetch();
 
     const membersWithRole = interaction.guild.members.cache.filter((member) => {
         return !member.user.bot && member.roles.cache.has(targetRole.id);
     });
+
+    await addAuditLog(
+        interaction,
+        kv,
+        'ロール所持者一覧取得',
+        `ロール <@&${targetRole.id}> を持っているメンバー一覧を取得しました。対象人数: ${membersWithRole.size}人`,
+    ).catch(() => null);
 
     if (membersWithRole.size === 0) {
         const content = `ロール <@&${targetRole.id}> を持っているメンバーはいません。`;
@@ -56,6 +64,7 @@ async function showMembersWithRole(interaction, targetRole, alreadyAcknowledged 
         if (alreadyAcknowledged) {
             await interaction.editReply({
                 content,
+                components: [],
             });
         } else {
             await interaction.reply(
@@ -108,7 +117,9 @@ async function execute(interaction) {
     );
 }
 
-async function handleComponent(interaction) {
+async function handleComponent(interaction, context) {
+    const { kv } = context;
+
     if (interaction.isButton()) {
         if (interaction.customId === 'hasrole_menu_list') {
             await interaction.reply(
@@ -151,6 +162,7 @@ async function handleComponent(interaction) {
                 interaction,
                 targetRole,
                 true,
+                kv,
             );
 
             return true;
