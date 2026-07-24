@@ -12,6 +12,7 @@ const {
     splitLinesToMessages,
     splitBySpaceToMessages,
 } = require('../utils/messageSplit');
+const { addAuditLog } = require('../utils/auditLog');
 
 async function collectSpeakerIdsFromChannel(channel) {
     const speakerIds = new Set();
@@ -262,11 +263,20 @@ async function collectFilteredMembers(interaction, hasRole, notRole) {
     });
 }
 
-async function outputMissingRoleResult(interaction, targetRole, mode, alreadyAcknowledged = false) {
+async function outputMissingRoleResult(interaction, kv, targetRole, mode, alreadyAcknowledged = false) {
     const members = await collectMissingRoleMembers(
         interaction,
         targetRole,
     );
+
+    await addAuditLog(
+        interaction,
+        kv,
+        mode === 'mention'
+            ? '未所持ロールメンション取得'
+            : '未所持ロール一覧取得',
+        `対象ロール: <@&${targetRole.id}> / 対象人数: ${members.size}人`,
+    ).catch(() => null);
 
     if (members.size === 0) {
         const content = `ロール <@&${targetRole.id}> を持っていないメンバーはいません。`;
@@ -334,7 +344,7 @@ async function outputMissingRoleResult(interaction, targetRole, mode, alreadyAck
     }
 }
 
-async function outputChannelNeverResult(interaction, targetRole, sourceChannel, mode, alreadyAcknowledged = false) {
+async function outputChannelNeverResult(interaction, kv, targetRole, sourceChannel, mode, alreadyAcknowledged = false) {
     if (sourceChannel.type !== ChannelType.GuildText) {
         const content = 'source_channel には通常のテキストチャンネルを指定してください。';
 
@@ -387,6 +397,15 @@ async function outputChannelNeverResult(interaction, targetRole, sourceChannel, 
         members = result.members;
         fetchedCount = result.fetchedCount;
     }
+
+    await addAuditLog(
+        interaction,
+        kv,
+        mode === 'mention'
+            ? '未発言者メンション取得'
+            : '未発言者一覧取得',
+        `対象ロール: <@&${targetRole.id}> / 対象チャンネル: <#${sourceChannel.id}> / 取得履歴: ${fetchedCount}件 / 対象人数: ${members.size}人`,
+    ).catch(() => null);
 
     if (members.size === 0) {
         await interaction.editReply({
@@ -451,12 +470,21 @@ async function outputChannelNeverResult(interaction, targetRole, sourceChannel, 
     }
 }
 
-async function outputFilterResult(interaction, hasRole, notRole, mode, alreadyAcknowledged = false) {
+async function outputFilterResult(interaction, kv, hasRole, notRole, mode, alreadyAcknowledged = false) {
     const members = await collectFilteredMembers(
         interaction,
         hasRole,
         notRole,
     );
+
+    await addAuditLog(
+        interaction,
+        kv,
+        mode === 'mention'
+            ? 'ロール条件メンション取得'
+            : 'ロール条件一覧取得',
+        `所持: <@&${hasRole.id}> / 未所持: <@&${notRole.id}> / 対象人数: ${members.size}人`,
+    ).catch(() => null);
 
     if (members.size === 0) {
         const content = `ロール <@&${hasRole.id}> を持ち、ロール <@&${notRole.id}> を持っていないメンバーはいません。`;
@@ -524,7 +552,7 @@ async function outputFilterResult(interaction, hasRole, notRole, mode, alreadyAc
     }
 }
 
-async function execute(interaction) {
+async function execute(interaction, context) {
     await interaction.reply(
         ephemeralOptions({
             content: buildRoleMenuContent(),
@@ -533,7 +561,9 @@ async function execute(interaction) {
     );
 }
 
-async function handleComponent(interaction) {
+async function handleComponent(interaction, context) {
+    const { kv } = context;
+
     if (interaction.isButton()) {
         if (interaction.customId === 'role_menu_missing') {
             await interaction.reply(
@@ -602,6 +632,7 @@ async function handleComponent(interaction) {
 
             await outputMissingRoleResult(
                 interaction,
+                kv,
                 role,
                 mode,
                 true,
@@ -641,6 +672,7 @@ async function handleComponent(interaction) {
 
             await outputChannelNeverResult(
                 interaction,
+                kv,
                 role,
                 channel,
                 mode,
@@ -680,6 +712,7 @@ async function handleComponent(interaction) {
 
             await outputFilterResult(
                 interaction,
+                kv,
                 hasRole,
                 notRole,
                 mode,
