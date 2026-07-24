@@ -1,8 +1,14 @@
+const {
+    PermissionFlagsBits,
+} = require('discord.js');
+
 const { ephemeralOptions } = require('../utils/ephemeral');
 const { handleCleanupButton } = require('./cleanupButtons');
+const { botAdminRoleKey } = require('../keys/redisKeys');
 
 const commandModules = [
     require('../commands/help'),
+    require('../commands/option'),
     require('../commands/forum'),
     require('../commands/forumlog'),
     require('../commands/rolemention'),
@@ -18,10 +24,60 @@ const commands = new Map(
     commandModules.map((command) => [command.name, command]),
 );
 
+const publicCommandNames = new Set([
+    'help',
+    'joined',
+]);
+
+async function hasBotCommandPermission(interaction, context) {
+    if (!interaction.inGuild()) {
+        return false;
+    }
+
+    const memberPermissions = interaction.memberPermissions;
+
+    if (
+        memberPermissions &&
+        memberPermissions.has(PermissionFlagsBits.ManageGuild)
+    ) {
+        return true;
+    }
+
+    const { kv } = context;
+
+    const adminRoleId = await kv.get(
+        botAdminRoleKey(interaction.guildId),
+    );
+
+    if (!adminRoleId) {
+        return false;
+    }
+
+    const member = interaction.member;
+
+    if (!member || !member.roles) {
+        return false;
+    }
+
+    return member.roles.cache.has(adminRoleId);
+}
+
+function isPublicInteraction(interaction) {
+    if (interaction.isChatInputCommand()) {
+        return publicCommandNames.has(interaction.commandName);
+    }
+
+    return false;
+}
+
+async function rejectNoPermission(interaction) {
+    await replyInteractionError(
+        interaction,
+        'この操作を使用する権限がありません。Bot管理ロール、または「サーバー管理」権限が必要です。',
+    );
+}
+
 async function handleInteractionCreate(interaction, context) {
-    // =========================================================
-    // ボタン / モーダル系
-    // =========================================================
     if (
         interaction.isButton() ||
         interaction.isModalSubmit() ||
@@ -39,7 +95,16 @@ async function handleInteractionCreate(interaction, context) {
         }
 
         try {
-            // 各コマンド側のボタン/モーダル処理を先に見る
+            const permitted = await hasBotCommandPermission(
+                interaction,
+                context,
+            );
+
+            if (!permitted) {
+                await rejectNoPermission(interaction);
+                return;
+            }
+
             for (const command of commandModules) {
                 if (typeof command.handleComponent !== 'function') {
                     continue;
@@ -55,7 +120,6 @@ async function handleInteractionCreate(interaction, context) {
                 }
             }
 
-            // 既存の cleanup ボタン処理
             if (interaction.isButton()) {
                 const handled = await handleCleanupButton(
                     interaction,
@@ -78,9 +142,6 @@ async function handleInteractionCreate(interaction, context) {
         return;
     }
 
-    // =========================================================
-    // スラッシュコマンド系
-    // =========================================================
     if (!interaction.isChatInputCommand()) return;
 
     if (!interaction.inGuild()) {
@@ -96,6 +157,18 @@ async function handleInteractionCreate(interaction, context) {
     if (!command) return;
 
     try {
+        if (!isPublicInteraction(interaction)) {
+            const permitted = await hasBotCommandPermission(
+                interaction,
+                context,
+            );
+
+            if (!permitted) {
+                await rejectNoPermission(interaction);
+                return;
+            }
+        }
+
         await command.execute(interaction, context);
     } catch (error) {
         console.error('interactionCreate でエラー:', error);

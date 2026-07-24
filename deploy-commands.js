@@ -38,47 +38,38 @@ const commands = [
         .toJSON(),
 
     new SlashCommandBuilder()
+        .setName('option')
+        .setDescription('Bot全体のオプション設定メニューを表示します')
+        .toJSON(),
+
+    new SlashCommandBuilder()
         .setName('forum')
         .setDescription('フォーラム通知設定メニューを表示します')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .toJSON(),
 
     new SlashCommandBuilder()
         .setName('forumlog')
         .setDescription('フォーラムログ出力メニューを表示します')
-        .setDefaultMemberPermissions(
-            PermissionFlagsBits.ManageGuild,
-        )
         .toJSON(),
 
     new SlashCommandBuilder()
         .setName('reaction')
         .setDescription('自動リアクション設定メニューを表示します')
-        .setDefaultMemberPermissions(
-            PermissionFlagsBits.ManageGuild,
-        )
         .toJSON(),
 
     new SlashCommandBuilder()
         .setName('role')
         .setDescription('ロール分析メニューを表示します')
-        .setDefaultMemberPermissions(
-            PermissionFlagsBits.ManageGuild,
-        )
         .toJSON(),
 
     new SlashCommandBuilder()
         .setName('rolemention')
         .setDescription('ロールメンション転載設定メニューを表示します')
-        .setDefaultMemberPermissions(
-            PermissionFlagsBits.ManageGuild,
-        )
         .toJSON(),
 
     new SlashCommandBuilder()
         .setName('forward')
         .setDescription('転送設定メニューを表示します')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .toJSON(),
 
     new SlashCommandBuilder()

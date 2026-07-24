@@ -54,6 +54,10 @@ function forwardExcludeChannelsKey(guildId) {
     return `forward-exclude-channels:${guildId}`;
 }
 
+function botAdminRoleKey(guildId) {
+    return `bot-option:admin-role:${guildId}`;
+}
+
 module.exports = {
     forumTargetsKey,
     forumIndexKey,
@@ -69,4 +73,5 @@ module.exports = {
     forwardAllowedBotsKey,
     forwardAllowedWebhooksKey,
     forwardExcludeChannelsKey,
+    botAdminRoleKey,
 };
