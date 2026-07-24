@@ -11,6 +11,7 @@ const {
 } = require('discord.js');
 
 const { ephemeralOptions } = require('../utils/ephemeral');
+const { addAuditLog } = require('../utils/auditLog');
 
 const allowedTargetTypes = [
     ChannelType.GuildText,
@@ -274,7 +275,6 @@ async function fetchAllForumThreads(forumChannel) {
         const sortedThreads = [...archived.threads.values()].sort((a, b) => {
             const aTime = a.archiveTimestamp || a.createdTimestamp || 0;
             const bTime = b.archiveTimestamp || b.createdTimestamp || 0;
-
             return aTime - bTime;
         });
 
@@ -459,6 +459,13 @@ async function archiveForumLogs(interaction, options) {
         ? `<#${targetChannel.id}>`
         : 'Webhook URL';
 
+    await addAuditLog(
+        interaction,
+        interaction.client.kv || options.kv || null,
+        'フォーラムログ出力開始',
+        `対象フォーラム <#${forumChannel.id}> のログ出力を開始しました。出力先: ${destinationLabel} / Bot投稿を含める: ${includeBots ? 'はい' : 'いいえ'}`,
+    ).catch(() => null);
+
     await interaction.editReply({
         content:
             `フォーラムログの出力を開始します。\n` +
@@ -550,6 +557,13 @@ async function archiveForumLogs(interaction, options) {
         ].join('\n'),
     );
 
+    await addAuditLog(
+        interaction,
+        interaction.client.kv || options.kv || null,
+        'フォーラムログ出力完了',
+        `対象フォーラム <#${forumChannel.id}> のログ出力が完了しました。処理スレッド数: ${processedThreads} / 出力メッセージ数: ${totalMessages} / 出力先: ${destinationLabel}`,
+    ).catch(() => null);
+
     await interaction.editReply({
         content:
             `フォーラムログの出力が完了しました。\n` +
@@ -570,7 +584,7 @@ async function execute(interaction) {
 }
 
 async function handleComponent(interaction, context) {
-    const { client } = context;
+    const { client, kv } = context;
 
     if (interaction.isButton()) {
         if (interaction.customId === 'forumlog_menu_help') {
@@ -648,6 +662,7 @@ async function handleComponent(interaction, context) {
                     targetWebhookUrl: null,
                     includeBots,
                     alreadyAcknowledged: true,
+                    kv,
                 },
             );
 
@@ -744,6 +759,7 @@ async function handleComponent(interaction, context) {
                     targetWebhookUrl,
                     includeBots,
                     alreadyAcknowledged: true,
+                    kv,
                 },
             );
 
