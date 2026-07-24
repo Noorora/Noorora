@@ -58,6 +58,10 @@ function botAdminRoleKey(guildId) {
     return `bot-option:admin-role:${guildId}`;
 }
 
+function botOptionAuditLogKey(guildId) {
+    return `bot-option:audit-log:${guildId}`;
+}
+
 module.exports = {
     forumTargetsKey,
     forumIndexKey,
@@ -74,4 +78,5 @@ module.exports = {
     forwardAllowedWebhooksKey,
     forwardExcludeChannelsKey,
     botAdminRoleKey,
+    botOptionAuditLogKey,
 };

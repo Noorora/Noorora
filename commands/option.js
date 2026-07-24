@@ -9,7 +9,21 @@ const {
 } = require('discord.js');
 
 const { ephemeralOptions } = require('../utils/ephemeral');
-const { botAdminRoleKey } = require('../keys/redisKeys');
+const {
+    botAdminRoleKey,
+    botOptionAuditLogKey,
+} = require('../keys/redisKeys');
+
+function formatDateTime(timestamp) {
+    return new Date(timestamp).toLocaleString('ja-JP', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
+}
 
 function buildOptionMenuContent() {
     return [
@@ -23,11 +37,14 @@ function buildOptionMenuContent() {
         '➕ **管理ロール設定**',
         '一覧からBot管理ロールを選択して設定します。',
         '',
+        '🗑️ **管理ロール解除**',
+        'Bot管理ロール設定を解除します。',
+        '',
         '🆔 **管理ロールID設定**',
         '一覧にロールが出てこない場合、ロールIDを直接入力して設定します。',
         '',
-        '🗑️ **管理ロール解除**',
-        'Bot管理ロール設定を解除します。',
+        '📝 **操作ログ**',
+        '誰がいつBot設定を変更したかを表示します。',
         '',
         '補足:',
         'Bot管理ロールを持っている人、または「サーバー管理」権限を持っている人は管理系コマンドを使えます。',
@@ -56,6 +73,12 @@ function buildOptionMenuComponents() {
                 .setStyle(ButtonStyle.Danger),
         ),
         new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('option_menu_audit_log')
+                .setLabel('操作ログ')
+                .setEmoji('📝')
+                .setStyle(ButtonStyle.Primary),
+
             new ButtonBuilder()
                 .setCustomId('option_menu_set_admin_role_by_id')
                 .setLabel('管理ロールID設定')
@@ -93,6 +116,29 @@ function buildAdminRoleIdModal() {
         );
 }
 
+async function addOptionAuditLog(interaction, kv, action, detail) {
+    const log = {
+        at: Date.now(),
+        userId: interaction.user.id,
+        userTag: interaction.user.tag,
+        action,
+        detail,
+    };
+
+    const key = botOptionAuditLogKey(interaction.guildId);
+
+    await kv.lPush(
+        key,
+        JSON.stringify(log),
+    );
+
+    await kv.lTrim(
+        key,
+        0,
+        49,
+    );
+}
+
 async function showOptionSettings(interaction, kv) {
     const adminRoleId = await kv.get(
         botAdminRoleKey(interaction.guildId),
@@ -121,6 +167,59 @@ async function showOptionSettings(interaction, kv) {
     );
 }
 
+async function showOptionAuditLog(interaction, kv) {
+    const logs = await kv.lRange(
+        botOptionAuditLogKey(interaction.guildId),
+        0,
+        19,
+    );
+
+    if (!logs || logs.length === 0) {
+        await interaction.reply(
+            ephemeralOptions({
+                content: 'Botオプションの操作ログはまだありません。',
+            }),
+        );
+
+        return;
+    }
+
+    const lines = [];
+
+    lines.push('## 📝 Botオプション操作ログ');
+    lines.push('');
+    lines.push('最新20件を表示します。');
+    lines.push('');
+
+    logs.forEach((raw, index) => {
+        let log;
+
+        try {
+            log = JSON.parse(raw);
+        } catch {
+            log = null;
+        }
+
+        if (!log) {
+            lines.push(`${index + 1}. 解析できないログ`);
+            lines.push('');
+            return;
+        }
+
+        lines.push(`${index + 1}. ${formatDateTime(log.at)}`);
+        lines.push(`実行者: <@${log.userId}> (${log.userTag || log.userId})`);
+        lines.push(`操作: ${log.action}`);
+        lines.push(`内容: ${log.detail}`);
+        lines.push('');
+    });
+
+    await interaction.reply(
+        ephemeralOptions({
+            content: lines.join('\n'),
+        }),
+    );
+}
+
 async function execute(interaction, context) {
     await interaction.reply(
         ephemeralOptions({
@@ -136,6 +235,15 @@ async function handleComponent(interaction, context) {
     if (interaction.isButton()) {
         if (interaction.customId === 'option_menu_show') {
             await showOptionSettings(
+                interaction,
+                kv,
+            );
+
+            return true;
+        }
+
+        if (interaction.customId === 'option_menu_audit_log') {
+            await showOptionAuditLog(
                 interaction,
                 kv,
             );
@@ -181,6 +289,13 @@ async function handleComponent(interaction, context) {
                 botAdminRoleKey(interaction.guildId),
             );
 
+            await addOptionAuditLog(
+                interaction,
+                kv,
+                'Bot管理ロール解除',
+                `Bot管理ロール <@&${adminRoleId}> の設定を解除しました。`,
+            );
+
             await interaction.reply(
                 ephemeralOptions({
                     content: `Bot管理ロール <@&${adminRoleId}> の設定を解除しました。`,
@@ -213,6 +328,13 @@ async function handleComponent(interaction, context) {
             await kv.set(
                 botAdminRoleKey(interaction.guildId),
                 role.id,
+            );
+
+            await addOptionAuditLog(
+                interaction,
+                kv,
+                'Bot管理ロール設定',
+                `Bot管理ロールを <@&${role.id}> に設定しました。`,
             );
 
             await interaction.update({
@@ -261,6 +383,13 @@ async function handleComponent(interaction, context) {
             await kv.set(
                 botAdminRoleKey(interaction.guildId),
                 role.id,
+            );
+
+            await addOptionAuditLog(
+                interaction,
+                kv,
+                'Bot管理ロールID設定',
+                `Bot管理ロールを <@&${role.id}> に設定しました。`,
             );
 
             await interaction.reply(
