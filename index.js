@@ -3,8 +3,10 @@ const {
     GatewayIntentBits,
     Events,
 } = require('discord.js');
+
 const { createClient } = require('redis');
 const express = require('express');
+
 const { handleInteractionCreate } = require('./handlers/interactionCreate');
 const { handleMessageCreate } = require('./handlers/messageCreate');
 const { handleForwardEditRelay } = require('./events/forwardRelay');
@@ -29,48 +31,29 @@ if (!REDIS_URL) {
     process.exit(1);
 }
 
-const kv = createClient({ url: REDIS_URL });
+const isFailoverSub = process.env.FAILOVER_SUB === 'true';
+const primaryHealthUrl = process.env.PRIMARY_HEALTH_URL || '';
+const failoverCheckIntervalMs = Number(
+    process.env.FAILOVER_CHECK_INTERVAL_MS || 30000,
+);
+const failoverFailureThreshold = Number(
+    process.env.FAILOVER_FAILURE_THRESHOLD || 2,
+);
+
+const kv = createClient({
+    url: REDIS_URL,
+});
+
 kv.on('error', (error) => {
     console.error('Key Value 接続エラー:', error);
 });
 
-async function main() {
-    await kv.connect();
-
-    const client = new Client({
-        intents: [
-            GatewayIntentBits.Guilds,
-            GatewayIntentBits.GuildMembers,
-            GatewayIntentBits.GuildMessages,
-            GatewayIntentBits.MessageContent,
-            GatewayIntentBits.GuildExpressions,
-            GatewayIntentBits.GuildVoiceStates,
-        ],
-    });
-
-    const context = {
-        client,
-        kv,
-    };
-
-    client.once(Events.ClientReady, (readyClient) => {
-        console.log(`ログイン完了: ${readyClient.user.tag}`);
-    });
-
-    client.on(Events.InteractionCreate, (interaction) => handleInteractionCreate(interaction, context));
-    client.on(Events.MessageCreate, (message) => handleMessageCreate(message, context));
-    client.on(Events.MessageUpdate, (oldMessage, newMessage) => handleForwardEditRelay(oldMessage, newMessage, context),);
-    client.on(Events.ThreadCreate, (thread) => handleForumThreadCreate(thread, context));
-
-    registerVoiceStateRelay(client, kv);
-
-    await client.login(TOKEN);
-}
-
-main().catch((error) => {
-    console.error('起動時エラー:', error);
-    process.exit(1);
-});
+let client = null;
+let context = null;
+let botState = 'stopped';
+let isStarting = false;
+let isStopping = false;
+let primaryFailureCount = 0;
 
 const app = express();
 const PORT = Number(process.env.PORT || 10000);
@@ -80,10 +63,206 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-    console.log(`[health] ${new Date().toISOString()} /health accessed`);
     res.status(200).send('ok');
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`HTTP server listening on ${PORT}`);
+app.get('/status', (req, res) => {
+    res.status(200).json({
+        ok: true,
+        failoverSub: isFailoverSub,
+        botState,
+        primaryHealthUrl: primaryHealthUrl || null,
+        primaryFailureCount,
+    });
+});
+
+function createDiscordClient() {
+    return new Client({
+        intents: [
+            GatewayIntentBits.Guilds,
+            GatewayIntentBits.GuildMembers,
+            GatewayIntentBits.GuildMessages,
+            GatewayIntentBits.MessageContent,
+            GatewayIntentBits.GuildExpressions,
+            GatewayIntentBits.GuildVoiceStates,
+        ],
+    });
+}
+
+async function startDiscordBot(reason = 'start requested') {
+    if (client || isStarting) {
+        return;
+    }
+
+    isStarting = true;
+    botState = 'starting';
+
+    try {
+        client = createDiscordClient();
+
+        context = {
+            client,
+            kv,
+        };
+
+        client.once(Events.ClientReady, (readyClient) => {
+            botState = 'running';
+            console.log(`ログイン完了: ${readyClient.user.tag}`);
+        });
+
+        client.on(
+            Events.InteractionCreate,
+            (interaction) => handleInteractionCreate(interaction, context),
+        );
+
+        client.on(
+            Events.MessageCreate,
+            (message) => handleMessageCreate(message, context),
+        );
+
+        client.on(
+            Events.MessageUpdate,
+            (oldMessage, newMessage) => handleForwardEditRelay(
+                oldMessage,
+                newMessage,
+                context,
+            ),
+        );
+
+        client.on(
+            Events.ThreadCreate,
+            (thread) => handleForumThreadCreate(thread, context),
+        );
+
+        registerVoiceStateRelay(client, kv);
+
+        console.log(`Discord Bot を起動します: ${reason}`);
+
+        await client.login(TOKEN);
+    } catch (error) {
+        console.error('Discord Bot 起動エラー:', error);
+
+        if (client) {
+            client.destroy();
+        }
+
+        client = null;
+        context = null;
+        botState = 'stopped';
+    } finally {
+        isStarting = false;
+    }
+}
+
+async function stopDiscordBot(reason = 'stop requested') {
+    if (!client || isStopping) {
+        return;
+    }
+
+    isStopping = true;
+    botState = 'stopping';
+
+    try {
+        console.log(`Discord Bot を停止します: ${reason}`);
+
+        client.destroy();
+
+        client = null;
+        context = null;
+        botState = 'standby';
+    } catch (error) {
+        console.error('Discord Bot 停止エラー:', error);
+
+        client = null;
+        context = null;
+        botState = 'standby';
+    } finally {
+        isStopping = false;
+    }
+}
+
+async function checkPrimaryHealth() {
+    if (!primaryHealthUrl) {
+        return false;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+        controller.abort();
+    }, 8000);
+
+    try {
+        const response = await fetch(primaryHealthUrl, {
+            method: 'GET',
+            signal: controller.signal,
+        });
+
+        return response.ok;
+    } catch {
+        return false;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+async function evaluateFailover() {
+    const primaryIsHealthy = await checkPrimaryHealth();
+
+    if (primaryIsHealthy) {
+        primaryFailureCount = 0;
+
+        if (client) {
+            await stopDiscordBot('メインBotが復旧したため');
+        } else {
+            botState = 'standby';
+        }
+
+        return;
+    }
+
+    primaryFailureCount += 1;
+
+    if (primaryFailureCount < failoverFailureThreshold) {
+        botState = client ? 'running' : 'standby';
+        return;
+    }
+
+    if (!client) {
+        await startDiscordBot('メインBotが停止しているためサブBotが起動');
+    }
+}
+
+async function startMainProcess() {
+    await kv.connect();
+
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`HTTP server listening on ${PORT}`);
+    });
+
+    if (!isFailoverSub) {
+        await startDiscordBot('通常起動');
+        return;
+    }
+
+    if (!primaryHealthUrl) {
+        console.error('FAILOVER_SUB=true ですが PRIMARY_HEALTH_URL が設定されていません。');
+        botState = 'standby';
+        return;
+    }
+
+    console.log('フェイルオーバーサブとして起動しました。');
+    console.log(`監視対象: ${primaryHealthUrl}`);
+
+    await evaluateFailover();
+
+    setInterval(() => {
+        evaluateFailover().catch((error) => {
+            console.error('フェイルオーバー確認エラー:', error);
+        });
+    }, failoverCheckIntervalMs);
+}
+
+startMainProcess().catch((error) => {
+    console.error('起動時エラー:', error);
+    process.exit(1);
 });
