@@ -100,29 +100,11 @@ async function showMembersWithRole(interaction, targetRole, alreadyAcknowledged 
 }
 
 async function execute(interaction) {
-    const sub = interaction.options.getSubcommand(false);
-
-    if (sub === 'menu') {
-        await interaction.reply(
-            ephemeralOptions({
-                content: buildHasRoleMenuContent(),
-                components: buildHasRoleMenuComponents(),
-            }),
-        );
-
-        return;
-    }
-
-    if (sub !== 'list') {
-        return;
-    }
-
-    const targetRole = interaction.options.getRole('role', true);
-
-    await showMembersWithRole(
-        interaction,
-        targetRole,
-        false,
+    await interaction.reply(
+        ephemeralOptions({
+            content: buildHasRoleMenuContent(),
+            components: buildHasRoleMenuComponents(),
+        }),
     );
 }
 

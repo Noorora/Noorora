@@ -306,29 +306,11 @@ async function listPinsInForum(interaction, forumChannel, alreadyAcknowledged = 
 }
 
 async function execute(interaction) {
-    const sub = interaction.options.getSubcommand(false);
-
-    if (sub === 'menu') {
-        await interaction.reply(
-            ephemeralOptions({
-                content: buildPinsMenuContent(),
-                components: buildPinsMenuComponents(),
-            }),
-        );
-
-        return;
-    }
-
-    if (sub !== 'list') {
-        return;
-    }
-
-    const forumChannel = interaction.options.getChannel('forum', true);
-
-    await listPinsInForum(
-        interaction,
-        forumChannel,
-        false,
+    await interaction.reply(
+        ephemeralOptions({
+            content: buildPinsMenuContent(),
+            components: buildPinsMenuComponents(),
+        }),
     );
 }
 

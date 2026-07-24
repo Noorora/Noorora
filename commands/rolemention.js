@@ -309,55 +309,12 @@ async function unsetRoleMentionTarget(interaction, context, role) {
 }
 
 async function execute(interaction, context) {
-    const sub = interaction.options.getSubcommand(false);
-
-    if (sub === 'menu') {
-        await interaction.reply(ephemeralOptions({
+    await interaction.reply(
+        ephemeralOptions({
             content: buildRoleMentionMenuContent(),
             components: buildRoleMentionMenuComponents(),
-        }));
-        return;
-    }
-
-    if (sub === 'set') {
-        const role = interaction.options.getRole('role', true);
-        const targetChannel = interaction.options.getChannel('target_channel', true);
-        const messageTemplate = interaction.options.getString('message', false);
-
-        await setRoleMentionTarget(
-            interaction,
-            context,
-            role,
-            targetChannel,
-            messageTemplate,
-        );
-        return;
-    }
-
-    if (sub === 'placeholders') {
-        await interaction.reply(ephemeralOptions({
-            content: buildRoleMentionPlaceholdersHelp(),
-        }));
-        return;
-    }
-
-    if (sub === 'show') {
-        await showRoleMentionSettings(
-            interaction,
-            context,
-        );
-        return;
-    }
-
-    if (sub === 'unset') {
-        const role = interaction.options.getRole('role', true);
-
-        await unsetRoleMentionTarget(
-            interaction,
-            context,
-            role,
-        );
-    }
+        }),
+    );
 }
 
 async function handleComponent(interaction, context) {

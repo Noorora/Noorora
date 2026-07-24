@@ -561,34 +561,11 @@ async function archiveForumLogs(interaction, options) {
 }
 
 async function execute(interaction) {
-    const sub = interaction.options.getSubcommand(false);
-
-    if (sub === 'menu') {
-        await interaction.reply(ephemeralOptions({
+    await interaction.reply(
+        ephemeralOptions({
             content: buildForumLogMenuContent(),
             components: buildForumLogMenuComponents(),
-        }));
-        return;
-    }
-
-    if (sub !== 'archive') {
-        return;
-    }
-
-    const forumChannel = interaction.options.getChannel('forum', true);
-    const targetChannel = interaction.options.getChannel('target_channel', false);
-    const targetWebhookUrl = interaction.options.getString('target_webhook_url', false);
-    const includeBots = interaction.options.getBoolean('include_bots') ?? false;
-
-    await archiveForumLogs(
-        interaction,
-        {
-            forumChannel,
-            targetChannel,
-            targetWebhookUrl,
-            includeBots,
-            alreadyAcknowledged: false,
-        },
+        }),
     );
 }
 
