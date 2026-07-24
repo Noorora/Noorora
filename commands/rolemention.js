@@ -1,5 +1,3 @@
-const crypto = require('crypto');
-
 const {
     ActionRowBuilder,
     ButtonBuilder,
@@ -14,14 +12,9 @@ const {
 
 const { ephemeralOptions } = require('../utils/ephemeral');
 const { splitLinesToMessages } = require('../utils/messageSplit');
+const { addAuditLog } = require('../utils/auditLog');
 
 const {
-    buildCleanupChoiceButtons,
-    buildStaleSummaryContent,
-} = require('../components/cleanupButtons');
-
-const {
-    pendingCleanupKey,
     roleMentionTargetsKey,
     roleMentionMessageMapKey,
 } = require('../keys/redisKeys');
@@ -150,20 +143,6 @@ function buildRoleMentionUnsetRoleSelectMenu() {
     ];
 }
 
-async function replyChunks(interaction, header, lines) {
-    const chunks = splitLinesToMessages(header, lines);
-
-    await interaction.reply(ephemeralOptions({
-        content: chunks[0],
-    }));
-
-    for (let i = 1; i < chunks.length; i++) {
-        await interaction.followUp(ephemeralOptions({
-            content: chunks[i],
-        }));
-    }
-}
-
 async function setRoleMentionTarget(interaction, context, role, targetChannel, messageTemplate) {
     const { kv } = context;
 
@@ -192,6 +171,13 @@ async function setRoleMentionTarget(interaction, context, role, targetChannel, m
             role.id,
         );
     }
+
+    await addAuditLog(
+        interaction,
+        kv,
+        'ロールメンション転載設定追加',
+        `ロール <@&${role.id}> の転載先を <#${targetChannel.id}> に設定しました。カスタム文面: ${messageTemplate ? 'あり' : 'なし'}`,
+    );
 
     let content =
         `ロールメンション転載設定を登録しました。\n` +
@@ -232,6 +218,15 @@ async function showRoleMentionSettings(interaction, context) {
 
         removedLines.push(...cleanedLines);
 
+        for (const line of cleanedLines) {
+            await addAuditLog(
+                interaction,
+                kv,
+                'ロールメンション転載設定自動削除',
+                line,
+            );
+        }
+
         const refreshed = await collectRoleMentionShowData(
             client,
             kv,
@@ -255,7 +250,7 @@ async function showRoleMentionSettings(interaction, context) {
     const lines = [];
 
     if (removedLines.length > 0) {
-        lines.push('## 削除した無効な設定');
+        lines.push('## 自動削除した無効な設定');
         lines.push(...removedLines);
         lines.push('');
     }
@@ -303,22 +298,27 @@ async function unsetRoleMentionTarget(interaction, context, role) {
         role.id,
     );
 
+    await addAuditLog(
+        interaction,
+        kv,
+        'ロールメンション転載設定削除',
+        `ロール <@&${role.id}> の転載設定を削除しました。`,
+    );
+
     await interaction.reply(ephemeralOptions({
         content: `ロール <@&${role.id}> の転載設定を削除しました。`,
     }));
 }
 
 async function execute(interaction, context) {
-    await interaction.reply(
-        ephemeralOptions({
-            content: buildRoleMentionMenuContent(),
-            components: buildRoleMentionMenuComponents(),
-        }),
-    );
+    await interaction.reply(ephemeralOptions({
+        content: buildRoleMentionMenuContent(),
+        components: buildRoleMentionMenuComponents(),
+    }));
 }
 
 async function handleComponent(interaction, context) {
-    const { client } = context;
+    const { client, kv } = context;
 
     if (interaction.isButton()) {
         if (interaction.customId === 'rolemention_menu_show') {
@@ -370,6 +370,7 @@ async function handleComponent(interaction, context) {
 
         if (interaction.customId === 'rolemention_unset_select_role') {
             const roleId = interaction.values[0];
+
             const role = await interaction.guild.roles
                 .fetch(roleId)
                 .catch(() => null);
@@ -382,8 +383,6 @@ async function handleComponent(interaction, context) {
                 return true;
             }
 
-            const { kv } = context;
-
             const removed = await kv.hDel(
                 roleMentionTargetsKey(interaction.guildId),
                 role.id,
@@ -393,6 +392,15 @@ async function handleComponent(interaction, context) {
                 roleMentionMessageMapKey(interaction.guildId),
                 role.id,
             );
+
+            if (removed) {
+                await addAuditLog(
+                    interaction,
+                    kv,
+                    'ロールメンション転載設定削除',
+                    `ロール <@&${role.id}> の転載設定を削除しました。`,
+                );
+            }
 
             await interaction.update(ephemeralOptions({
                 content: removed
