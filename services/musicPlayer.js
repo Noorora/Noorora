@@ -1,5 +1,4 @@
 const { spawn } = require('child_process');
-const prism = require('prism-media');
 
 const {
     AudioPlayerStatus,
@@ -130,6 +129,10 @@ function createAudioStream(url) {
         },
     );
 
+    ytdlp.on('error', (error) => {
+        console.error('[music yt-dlp spawn error]', error);
+    });
+
     ytdlp.stderr.on('data', (chunk) => {
         const text = chunk.toString().trim();
 
@@ -138,13 +141,12 @@ function createAudioStream(url) {
         }
     });
 
-    const ffmpeg = new prism.FFmpeg({
-        executable: ffmpegPath,
-        args: [
-            '-analyzeduration',
-            '0',
+    const ffmpeg = spawn(
+        ffmpegPath,
+        [
+            '-hide_banner',
             '-loglevel',
-            '0',
+            'error',
             '-i',
             'pipe:0',
             '-f',
@@ -153,12 +155,48 @@ function createAudioStream(url) {
             '48000',
             '-ac',
             '2',
+            'pipe:1',
         ],
+        {
+            stdio: ['pipe', 'pipe', 'pipe'],
+        },
+    );
+
+    ffmpeg.on('error', (error) => {
+        console.error('[music ffmpeg spawn error]', error);
     });
 
-    ytdlp.stdout.pipe(ffmpeg);
+    ffmpeg.stderr.on('data', (chunk) => {
+        const text = chunk.toString().trim();
 
-    const resource = createAudioResource(ffmpeg, {
+        if (text) {
+            console.warn('[music ffmpeg]', text);
+        }
+    });
+
+    ytdlp.stdout.on('error', (error) => {
+        console.error('[music yt-dlp stdout error]', error);
+    });
+
+    ffmpeg.stdin.on('error', (error) => {
+        if (error.code !== 'EPIPE') {
+            console.error('[music ffmpeg stdin error]', error);
+        }
+    });
+
+    ytdlp.stdout.pipe(ffmpeg.stdin);
+
+    ytdlp.on('close', (code) => {
+        if (code !== 0) {
+            console.warn(`[music yt-dlp] exited with code ${code}`);
+        }
+
+        if (!ffmpeg.stdin.destroyed) {
+            ffmpeg.stdin.end();
+        }
+    });
+
+    const resource = createAudioResource(ffmpeg.stdout, {
         inputType: StreamType.Raw,
         inlineVolume: true,
     });
@@ -182,7 +220,12 @@ class GuildMusicPlayer {
         this.connection = null;
         this.audioPlayer = createAudioPlayer();
         this.textChannel = null;
-        this.destroyTimer = null;
+
+        this.audioPlayer.on('stateChange', (oldState, newState) => {
+            console.log(
+                `[music] audio player state: ${oldState.status} -> ${newState.status}`,
+            );
+        });
 
         this.audioPlayer.on(AudioPlayerStatus.Idle, () => {
             this.cleanupCurrentProcesses();
@@ -231,6 +274,12 @@ class GuildMusicPlayer {
             selfDeaf: true,
         });
 
+        this.connection.on('stateChange', (oldState, newState) => {
+            console.log(
+                `[music] voice connection state: ${oldState.status} -> ${newState.status}`,
+            );
+        });
+
         this.connection.subscribe(this.audioPlayer);
 
         await entersState(
@@ -268,11 +317,21 @@ class GuildMusicPlayer {
             return null;
         });
 
+        if (!info) {
+            return {
+                ok: false,
+                message:
+                    '動画情報の取得に失敗しました。\n' +
+                    'Render 環境で yt-dlp が使えるか確認してください。\n' +
+                    'Build Command と YTDLP_PATH を確認してください。',
+            };
+        }
+
         const track = {
             url,
-            title: info?.title || 'タイトル不明',
-            webpageUrl: info?.webpageUrl || url,
-            duration: info?.duration || null,
+            title: info.title,
+            webpageUrl: info.webpageUrl,
+            duration: info.duration,
             requestedById: interaction.user.id,
             ytdlp: null,
             ffmpeg: null,
@@ -284,7 +343,8 @@ class GuildMusicPlayer {
 
         this.queue.push(track);
 
-        const shouldStart = !this.current &&
+        const shouldStart =
+            !this.current &&
             this.audioPlayer.state.status !== AudioPlayerStatus.Playing &&
             this.audioPlayer.state.status !== AudioPlayerStatus.Buffering;
 
@@ -402,6 +462,7 @@ class GuildMusicPlayer {
         }
 
         lines.push('### 待機中');
+
         this.queue.slice(0, 10).forEach((track, index) => {
             lines.push(`${index + 1}. ${track.title}`);
             lines.push(`   リクエスト: <@${track.requestedById}>`);
@@ -424,8 +485,8 @@ class GuildMusicPlayer {
             this.current.ytdlp.kill('SIGKILL');
         }
 
-        if (this.current.ffmpeg && typeof this.current.ffmpeg.destroy === 'function') {
-            this.current.ffmpeg.destroy();
+        if (this.current.ffmpeg && !this.current.ffmpeg.killed) {
+            this.current.ffmpeg.kill('SIGKILL');
         }
     }
 
