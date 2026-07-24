@@ -12,6 +12,7 @@ const {
 
 const { ephemeralOptions } = require('../utils/ephemeral');
 const { splitLinesToMessages } = require('../utils/messageSplit');
+const { addAuditLog } = require('../utils/auditLog');
 
 const {
     reactionRulesKey,
@@ -41,11 +42,11 @@ function buildReactionMenuContent() {
         '🗑️ **リアクション削除**',
         '自動リアクション設定を削除します。',
         '',
-        '🤖 **許可Bot追加**',
-        'Bot投稿も自動リアクション対象にしたい場合、対象Botを許可します。',
-        '',
         '📋 **許可Bot一覧**',
         '許可されているBot一覧を表示します。',
+        '',
+        '🤖 **許可Bot追加**',
+        'Bot投稿も自動リアクション対象にしたい場合、対象Botを許可します。',
         '',
         '🚫 **許可Bot削除**',
         '許可Botを削除します。',
@@ -73,7 +74,6 @@ function buildReactionMenuComponents() {
                 .setEmoji('🗑️')
                 .setStyle(ButtonStyle.Danger),
         ),
-
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('reaction_menu_allow_show')
@@ -186,8 +186,17 @@ async function showReactionSettings(interaction, kv) {
                 rule.field,
             );
 
-            removedLines.push(
-                `・対象チャンネル <#${rule.channelId}> が見つからないため、ユーザー <@${rule.userId}> / 絵文字 ${rule.emoji} の自動リアクション設定を削除しました。`,
+            const detail =
+                `対象チャンネル <#${rule.channelId}> が見つからないため、` +
+                `ユーザー <@${rule.userId}> / 絵文字 ${rule.emoji} の自動リアクション設定を削除しました。`;
+
+            removedLines.push(`・${detail}`);
+
+            await addAuditLog(
+                interaction,
+                kv,
+                '自動リアクション設定自動削除',
+                detail,
             );
 
             continue;
@@ -203,8 +212,17 @@ async function showReactionSettings(interaction, kv) {
                 rule.field,
             );
 
-            removedLines.push(
-                `・ユーザー ${rule.userId} が見つからないため、対象チャンネル <#${rule.channelId}> / 絵文字 ${rule.emoji} の自動リアクション設定を削除しました。`,
+            const detail =
+                `ユーザー ${rule.userId} が見つからないため、` +
+                `対象チャンネル <#${rule.channelId}> / 絵文字 ${rule.emoji} の自動リアクション設定を削除しました。`;
+
+            removedLines.push(`・${detail}`);
+
+            await addAuditLog(
+                interaction,
+                kv,
+                '自動リアクション設定自動削除',
+                detail,
             );
 
             continue;
@@ -213,16 +231,6 @@ async function showReactionSettings(interaction, kv) {
         validLines.push(
             `${validLines.length + 1}. 対象チャンネル: <#${rule.channelId}> / ユーザー: <@${rule.userId}> / 絵文字: ${rule.emoji}`,
         );
-    }
-
-    if (validLines.length === 0 && removedLines.length === 0) {
-        await interaction.reply(
-            ephemeralOptions({
-                content: 'このサーバーにはまだ自動リアクション設定がありません。',
-            }),
-        );
-
-        return;
     }
 
     const lines = [];
@@ -289,8 +297,16 @@ async function showAllowedBots(interaction, kv) {
                 botId,
             );
 
-            removedLines.push(
-                `・Bot ID ${botId} が見つからないため、自動リアクション許可Bot一覧から削除しました。`,
+            const detail =
+                `Bot ID ${botId} が見つからないため、自動リアクション許可Bot一覧から削除しました。`;
+
+            removedLines.push(`・${detail}`);
+
+            await addAuditLog(
+                interaction,
+                kv,
+                '自動リアクション許可Bot自動削除',
+                detail,
             );
 
             continue;
@@ -302,8 +318,16 @@ async function showAllowedBots(interaction, kv) {
                 botId,
             );
 
-            removedLines.push(
-                `・<@${botId}> はBotアカウントではないため、自動リアクション許可Bot一覧から削除しました。`,
+            const detail =
+                `<@${botId}> はBotアカウントではないため、自動リアクション許可Bot一覧から削除しました。`;
+
+            removedLines.push(`・${detail}`);
+
+            await addAuditLog(
+                interaction,
+                kv,
+                '自動リアクション許可Bot自動削除',
+                detail,
             );
 
             continue;
@@ -312,16 +336,6 @@ async function showAllowedBots(interaction, kv) {
         validLines.push(
             `${validLines.length + 1}. <@${botId}> (${botId})`,
         );
-    }
-
-    if (validLines.length === 0 && removedLines.length === 0) {
-        await interaction.reply(
-            ephemeralOptions({
-                content: 'このサーバーには、許可された Bot 一覧がまだありません。',
-            }),
-        );
-
-        return;
     }
 
     const lines = [];
@@ -376,6 +390,13 @@ async function addReactionRule(interaction, kv, targetChannel, user, emoji) {
         emoji,
     );
 
+    await addAuditLog(
+        interaction,
+        kv,
+        '自動リアクション設定追加',
+        `対象チャンネル <#${targetChannel.id}> / ユーザー <@${user.id}> / 絵文字 ${emoji} の自動リアクション設定を追加しました。`,
+    );
+
     await interaction.reply(
         ephemeralOptions({
             content:
@@ -392,6 +413,15 @@ async function removeReactionRule(interaction, kv, targetChannel, user) {
         reactionRulesKey(interaction.guildId),
         reactionRuleField(targetChannel.id, user.id),
     );
+
+    if (removed) {
+        await addAuditLog(
+            interaction,
+            kv,
+            '自動リアクション設定削除',
+            `対象チャンネル <#${targetChannel.id}> / ユーザー <@${user.id}> の自動リアクション設定を削除しました。`,
+        );
+    }
 
     await interaction.reply(
         ephemeralOptions({
@@ -418,6 +448,13 @@ async function addAllowedBot(interaction, kv, user) {
         user.id,
     );
 
+    await addAuditLog(
+        interaction,
+        kv,
+        '自動リアクション許可Bot追加',
+        `自動リアクション対象として Bot <@${user.id}> を許可しました。`,
+    );
+
     await interaction.reply(
         ephemeralOptions({
             content: `自動リアクション対象として Bot <@${user.id}> を許可しました。`,
@@ -430,6 +467,15 @@ async function removeAllowedBot(interaction, kv, user) {
         reactionAllowedBotsKey(interaction.guildId),
         user.id,
     );
+
+    if (removed) {
+        await addAuditLog(
+            interaction,
+            kv,
+            '自動リアクション許可Bot削除',
+            `自動リアクション対象から Bot <@${user.id}> を削除しました。`,
+        );
+    }
 
     await interaction.reply(
         ephemeralOptions({
@@ -490,6 +536,15 @@ async function handleComponent(interaction, context) {
             return true;
         }
 
+        if (interaction.customId === 'reaction_menu_allow_show') {
+            await showAllowedBots(
+                interaction,
+                kv,
+            );
+
+            return true;
+        }
+
         if (interaction.customId === 'reaction_menu_allow_add') {
             await interaction.reply(
                 ephemeralOptions({
@@ -499,15 +554,6 @@ async function handleComponent(interaction, context) {
                         '許可するBotを選択してください',
                     ),
                 }),
-            );
-
-            return true;
-        }
-
-        if (interaction.customId === 'reaction_menu_allow_show') {
-            await showAllowedBots(
-                interaction,
-                kv,
             );
 
             return true;
@@ -620,6 +666,15 @@ async function handleComponent(interaction, context) {
                 reactionRuleField(targetChannel.id, user.id),
             );
 
+            if (removed) {
+                await addAuditLog(
+                    interaction,
+                    kv,
+                    '自動リアクション設定削除',
+                    `対象チャンネル <#${targetChannel.id}> / ユーザー <@${user.id}> の自動リアクション設定を削除しました。`,
+                );
+            }
+
             await interaction.update(
                 ephemeralOptions({
                     content: removed
@@ -666,6 +721,13 @@ async function handleComponent(interaction, context) {
                 user.id,
             );
 
+            await addAuditLog(
+                interaction,
+                kv,
+                '自動リアクション許可Bot追加',
+                `自動リアクション対象として Bot <@${user.id}> を許可しました。`,
+            );
+
             await interaction.update(
                 ephemeralOptions({
                     content: `自動リアクション対象として Bot <@${user.id}> を許可しました。`,
@@ -698,6 +760,15 @@ async function handleComponent(interaction, context) {
                 reactionAllowedBotsKey(interaction.guildId),
                 user.id,
             );
+
+            if (removed) {
+                await addAuditLog(
+                    interaction,
+                    kv,
+                    '自動リアクション許可Bot削除',
+                    `自動リアクション対象から Bot <@${user.id}> を削除しました。`,
+                );
+            }
 
             await interaction.update(
                 ephemeralOptions({
