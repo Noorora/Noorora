@@ -16,7 +16,7 @@ const ffmpegStatic = require('ffmpeg-static');
 const guildPlayers = new Map();
 
 function getYtDlpPath() {
-    return process.env.YTDLP_PATH || 'yt-dlp';
+    return process.env.YTDLP_PATH || './yt-dlp';
 }
 
 function getFfmpegPath() {
@@ -72,6 +72,7 @@ async function getVideoInfo(url) {
 
         let stdout = '';
         let stderr = '';
+        let settled = false;
 
         child.stdout.on('data', (chunk) => {
             stdout += chunk.toString();
@@ -82,10 +83,15 @@ async function getVideoInfo(url) {
         });
 
         child.on('error', (error) => {
+            if (settled) return;
+            settled = true;
             reject(error);
         });
 
         child.on('close', (code) => {
+            if (settled) return;
+            settled = true;
+
             if (code !== 0) {
                 reject(
                     new Error(
@@ -200,12 +206,16 @@ async function createAudioStream(url) {
             streamUrl,
 
             '-vn',
-            '-f',
-            's16le',
+            '-c:a',
+            'libopus',
             '-ar',
             '48000',
             '-ac',
             '2',
+            '-b:a',
+            '128k',
+            '-f',
+            'ogg',
             'pipe:1',
         ],
         {
@@ -225,18 +235,13 @@ async function createAudioStream(url) {
         }
     });
 
-    ffmpeg.on('close', (code) => {
-        console.log(`[music ffmpeg] exited with code ${code}`);
+    ffmpeg.on('close', (code, signal) => {
+        console.log(`[music ffmpeg] exited with code ${code}, signal ${signal}`);
     });
 
     const resource = createAudioResource(ffmpeg.stdout, {
-        inputType: StreamType.Raw,
-        inlineVolume: true,
+        inputType: StreamType.OggOpus,
     });
-
-    if (resource.volume) {
-        resource.volume.setVolume(0.45);
-    }
 
     return {
         resource,
@@ -262,6 +267,7 @@ class GuildMusicPlayer {
 
         this.audioPlayer.on(AudioPlayerStatus.Idle, () => {
             this.cleanupCurrentProcesses();
+
             this.playNext().catch((error) => {
                 console.error('[music] playNext error:', error);
                 this.notifyTextChannel('次の曲の再生中にエラーが発生しました。');
@@ -270,8 +276,13 @@ class GuildMusicPlayer {
 
         this.audioPlayer.on('error', (error) => {
             console.error('[music] audio player error:', error);
-            this.notifyTextChannel('再生中にエラーが発生しました。次の曲へ進みます。');
+
+            this.notifyTextChannel(
+                '再生中にエラーが発生しました。次の曲へ進みます。',
+            );
+
             this.cleanupCurrentProcesses();
+
             this.playNext().catch((nextError) => {
                 console.error('[music] playNext after error:', nextError);
             });
