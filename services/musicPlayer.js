@@ -20,7 +20,7 @@ function getYtDlpPath() {
 }
 
 function getFfmpegPath() {
-    return process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg';
+    return process.env.FFMPEG_PATH || 'ffmpeg';
 }
 
 function formatDuration(seconds) {
