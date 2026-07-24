@@ -110,45 +110,96 @@ async function getVideoInfo(url) {
     });
 }
 
-function createAudioStream(url) {
+async function getAudioStreamUrl(url) {
     const ytDlpPath = getYtDlpPath();
+
+    return new Promise((resolve, reject) => {
+        const child = spawn(
+            ytDlpPath,
+            [
+                '--no-playlist',
+                '-f',
+                'bestaudio/best',
+                '--get-url',
+                '--no-warnings',
+                url,
+            ],
+            {
+                stdio: ['ignore', 'pipe', 'pipe'],
+            },
+        );
+
+        let stdout = '';
+        let stderr = '';
+        let settled = false;
+
+        child.stdout.on('data', (chunk) => {
+            stdout += chunk.toString();
+        });
+
+        child.stderr.on('data', (chunk) => {
+            stderr += chunk.toString();
+        });
+
+        child.on('error', (error) => {
+            if (settled) return;
+            settled = true;
+            reject(error);
+        });
+
+        child.on('close', (code) => {
+            if (settled) return;
+            settled = true;
+
+            if (code !== 0) {
+                reject(
+                    new Error(
+                        stderr || `yt-dlp が終了コード ${code} で終了しました。`,
+                    ),
+                );
+                return;
+            }
+
+            const streamUrl = stdout
+                .split('\n')
+                .map((line) => line.trim())
+                .filter(Boolean)[0];
+
+            if (!streamUrl) {
+                reject(new Error('yt-dlp から音声URLを取得できませんでした。'));
+                return;
+            }
+
+            resolve(streamUrl);
+        });
+    });
+}
+
+async function createAudioStream(url) {
     const ffmpegPath = getFfmpegPath();
+    const streamUrl = await getAudioStreamUrl(url);
 
-    const ytdlp = spawn(
-        ytDlpPath,
-        [
-            '--no-playlist',
-            '-f',
-            'bestaudio/best',
-            '-o',
-            '-',
-            url,
-        ],
-        {
-            stdio: ['ignore', 'pipe', 'pipe'],
-        },
-    );
-
-    ytdlp.on('error', (error) => {
-        console.error('[music yt-dlp spawn error]', error);
-    });
-
-    ytdlp.stderr.on('data', (chunk) => {
-        const text = chunk.toString().trim();
-
-        if (text) {
-            console.warn('[music yt-dlp]', text);
-        }
-    });
+    console.log('[music] audio stream URL acquired');
 
     const ffmpeg = spawn(
         ffmpegPath,
         [
             '-hide_banner',
             '-loglevel',
-            'error',
+            'warning',
+
+            '-reconnect',
+            '1',
+            '-reconnect_streamed',
+            '1',
+            '-reconnect_delay_max',
+            '5',
+
+            '-re',
             '-i',
-            'pipe:0',
+            streamUrl,
+
+            '-vn',
             '-f',
             's16le',
             '-ar',
@@ -158,7 +209,7 @@ function createAudioStream(url) {
             'pipe:1',
         ],
         {
-            stdio: ['pipe', 'pipe', 'pipe'],
+            stdio: ['ignore', 'pipe', 'pipe'],
         },
     );
 
@@ -174,26 +225,8 @@ function createAudioStream(url) {
         }
     });
 
-    ytdlp.stdout.on('error', (error) => {
-        console.error('[music yt-dlp stdout error]', error);
-    });
-
-    ffmpeg.stdin.on('error', (error) => {
-        if (error.code !== 'EPIPE') {
-            console.error('[music ffmpeg stdin error]', error);
-        }
-    });
-
-    ytdlp.stdout.pipe(ffmpeg.stdin);
-
-    ytdlp.on('close', (code) => {
-        if (code !== 0) {
-            console.warn(`[music yt-dlp] exited with code ${code}`);
-        }
-
-        if (!ffmpeg.stdin.destroyed) {
-            ffmpeg.stdin.end();
-        }
+    ffmpeg.on('close', (code) => {
+        console.log(`[music ffmpeg] exited with code ${code}`);
     });
 
     const resource = createAudioResource(ffmpeg.stdout, {
@@ -207,7 +240,7 @@ function createAudioStream(url) {
 
     return {
         resource,
-        ytdlp,
+        ytdlp: null,
         ffmpeg,
     };
 }
@@ -378,11 +411,29 @@ class GuildMusicPlayer {
 
         this.current = next;
 
+        let stream;
+
+        try {
+            stream = await createAudioStream(next.url);
+        } catch (error) {
+            console.error('[music] createAudioStream error:', error);
+
+            await this.notifyTextChannel(
+                `再生準備中にエラーが発生しました: ${next.title}\n` +
+                '次の曲へ進みます。',
+            );
+
+            this.current = null;
+
+            await this.playNext();
+            return;
+        }
+
         const {
             resource,
             ytdlp,
             ffmpeg,
-        } = createAudioStream(next.url);
+        } = stream;
 
         next.ytdlp = ytdlp;
         next.ffmpeg = ffmpeg;
