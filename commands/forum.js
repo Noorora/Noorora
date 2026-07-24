@@ -11,6 +11,8 @@ const {
 
 const crypto = require('crypto');
 
+const { addAuditLog } = require('../utils/auditLog');
+
 const { ephemeralOptions } = require('../utils/ephemeral');
 const { splitLinesToMessages } = require('../utils/messageSplit');
 const {
@@ -263,6 +265,13 @@ async function addForumTargets(interaction, context, options) {
             );
         }
 
+        await addAuditLog(
+            interaction,
+            kv,
+            'フォーラム通知追加',
+            `フォーラム <#${forumId}> の通知先を <#${targetChannel.id}> に設定しました。カスタム文面: ${messageTemplate ? 'あり' : 'なし'}`,
+        );
+
         successLines.push(`・<#${forumId}> → <#${targetChannel.id}>`);
     }
 
@@ -413,6 +422,15 @@ async function removeForumTarget(interaction, kv, guildId, forumId, targetChanne
         ? `フォーラム <#${forumId}> から通知先 <#${targetChannelId}> を削除しました。`
         : `フォーラム <#${forumId}> に、通知先 <#${targetChannelId}> の設定は見つかりませんでした。`;
 
+    if (removed) {
+        await addAuditLog(
+            interaction,
+            kv,
+            'フォーラム通知削除',
+            `フォーラム <#${forumId}> から通知先 <#${targetChannelId}> を削除しました。`,
+        );
+    }
+
     if (useEphemeral) {
         await interaction.reply(ephemeralOptions({ content }));
     } else {
@@ -552,6 +570,13 @@ async function unsetForumTargets(interaction, context, options) {
             forum.id,
         );
 
+        await addAuditLog(
+            interaction,
+            kv,
+            'フォーラム通知全削除',
+            `フォーラム <#${forum.id}> に紐づく通知先をすべて削除しました。`,
+        );
+
         const content = `フォーラム <#${forum.id}> に紐づく通知先をすべて削除しました。`;
 
         if (useEphemeral) {
@@ -594,6 +619,13 @@ async function unsetForumTargets(interaction, context, options) {
 
             return;
         }
+
+        await addAuditLog(
+            interaction,
+            kv,
+            'フォーラム通知先一括削除',
+            `通知先 <#${targetChannel.id}> に紐づくフォーラム通知設定を ${removedCount} 件削除しました。`,
+        );
 
         await replyChunks(
             interaction,
