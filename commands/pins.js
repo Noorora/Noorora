@@ -9,6 +9,7 @@ const {
 
 const { splitLinesToMessages } = require('../utils/messageSplit');
 const { ephemeralOptions } = require('../utils/ephemeral');
+const { addAuditLog } = require('../utils/auditLog');
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -162,6 +163,7 @@ async function fetchForumThreads(forumChannel, member) {
         const sortedThreads = [...archived.threads.values()].sort((a, b) => {
             const aTime = a.archiveTimestamp || a.createdTimestamp || 0;
             const bTime = b.archiveTimestamp || b.createdTimestamp || 0;
+
             return aTime - bTime;
         });
 
@@ -187,22 +189,37 @@ async function fetchForumThreads(forumChannel, member) {
     });
 }
 
-async function listPinsInForum(interaction, forumChannel, alreadyAcknowledged = false) {
+async function listPinsInForum(interaction, forumChannel, alreadyAcknowledged = false, kv = null) {
     if (forumChannel.type !== ChannelType.GuildForum) {
         const content = 'forum にはフォーラムチャンネルを指定してください。';
 
         if (alreadyAcknowledged) {
-            await interaction.editReply({ content });
+            await interaction.editReply({
+                content,
+            });
         } else {
-            await interaction.reply(ephemeralOptions({ content }));
+            await interaction.reply(
+                ephemeralOptions({
+                    content,
+                }),
+            );
         }
 
         return;
     }
 
     if (!alreadyAcknowledged) {
-        await interaction.deferReply(ephemeralOptions());
+        await interaction.deferReply(
+            ephemeralOptions(),
+        );
     }
+
+    await addAuditLog(
+        interaction,
+        kv,
+        'ピン留め一覧取得開始',
+        `フォーラム <#${forumChannel.id}> のピン留め一覧取得を開始しました。`,
+    ).catch(() => null);
 
     const threads = await fetchForumThreads(
         forumChannel,
@@ -210,10 +227,18 @@ async function listPinsInForum(interaction, forumChannel, alreadyAcknowledged = 
     );
 
     if (threads.length === 0) {
+        await addAuditLog(
+            interaction,
+            kv,
+            'ピン留め一覧取得完了',
+            `フォーラム <#${forumChannel.id}> 内に閲覧可能なスレッドが見つかりませんでした。`,
+        ).catch(() => null);
+
         await interaction.editReply({
             content:
                 `対象フォーラム <#${forumChannel.id}> 内に、閲覧可能なスレッドは見つかりませんでした。`,
         });
+
         return;
     }
 
@@ -276,13 +301,28 @@ async function listPinsInForum(interaction, forumChannel, alreadyAcknowledged = 
     }
 
     if (totalPins === 0) {
+        await addAuditLog(
+            interaction,
+            kv,
+            'ピン留め一覧取得完了',
+            `フォーラム <#${forumChannel.id}> 内の ${scannedThreads} スレッドを確認しましたが、ピン留めメッセージは見つかりませんでした。`,
+        ).catch(() => null);
+
         await interaction.editReply({
             content:
                 `対象フォーラム <#${forumChannel.id}> 内のスレッドに、ピン留めされたメッセージは見つかりませんでした。\n` +
                 `確認対象: ${scannedThreads} スレッド`,
         });
+
         return;
     }
+
+    await addAuditLog(
+        interaction,
+        kv,
+        'ピン留め一覧取得完了',
+        `フォーラム <#${forumChannel.id}> のピン留め一覧取得が完了しました。確認対象: ${scannedThreads} スレッド / ピン留め: ${totalPins} 件`,
+    ).catch(() => null);
 
     const chunks = splitLinesToMessages(
         `📌 フォーラム内ピン留め一覧\n` +
@@ -315,7 +355,7 @@ async function execute(interaction) {
 }
 
 async function handleComponent(interaction, context) {
-    const { client } = context;
+    const { client, kv } = context;
 
     if (interaction.isButton()) {
         if (interaction.customId === 'pins_menu_help') {
@@ -370,6 +410,7 @@ async function handleComponent(interaction, context) {
                 interaction,
                 forumChannel,
                 true,
+                kv,
             );
 
             return true;
