@@ -181,11 +181,42 @@ async function getAudioStreamUrl(url) {
     });
 }
 
-async function createAudioStream(url) {
+function createAudioStream(url) {
+    const ytDlpPath = getYtDlpPath();
     const ffmpegPath = getFfmpegPath();
-    const streamUrl = await getAudioStreamUrl(url);
 
-    console.log('[music] audio stream URL acquired');
+    console.log('[music] starting yt-dlp pipe stream');
+
+    const ytdlp = spawn(
+        ytDlpPath,
+        [
+            '--no-playlist',
+            '-f',
+            'bestaudio/best',
+            '-o',
+            '-',
+            url,
+        ],
+        {
+            stdio: ['ignore', 'pipe', 'pipe'],
+        },
+    );
+
+    ytdlp.on('error', (error) => {
+        console.error('[music yt-dlp spawn error]', error);
+    });
+
+    ytdlp.stderr.on('data', (chunk) => {
+        const text = chunk.toString().trim();
+
+        if (text) {
+            console.warn('[music yt-dlp]', text);
+        }
+    });
+
+    ytdlp.on('close', (code, signal) => {
+        console.log(`[music yt-dlp] exited with code ${code}, signal ${signal}`);
+    });
 
     const ffmpeg = spawn(
         ffmpegPath,
@@ -194,32 +225,21 @@ async function createAudioStream(url) {
             '-loglevel',
             'warning',
 
-            '-reconnect',
-            '1',
-            '-reconnect_streamed',
-            '1',
-            '-reconnect_delay_max',
-            '5',
-
             '-re',
             '-i',
-            streamUrl,
+            'pipe:0',
 
             '-vn',
-            '-c:a',
-            'libopus',
+            '-f',
+            's16le',
             '-ar',
             '48000',
             '-ac',
             '2',
-            '-b:a',
-            '128k',
-            '-f',
-            'ogg',
             'pipe:1',
         ],
         {
-            stdio: ['ignore', 'pipe', 'pipe'],
+            stdio: ['pipe', 'pipe', 'pipe'],
         },
     );
 
@@ -239,13 +259,30 @@ async function createAudioStream(url) {
         console.log(`[music ffmpeg] exited with code ${code}, signal ${signal}`);
     });
 
-    const resource = createAudioResource(ffmpeg.stdout, {
-        inputType: StreamType.OggOpus,
+    ytdlp.stdout.on('error', (error) => {
+        console.error('[music yt-dlp stdout error]', error);
     });
+
+    ffmpeg.stdin.on('error', (error) => {
+        if (error.code !== 'EPIPE') {
+            console.error('[music ffmpeg stdin error]', error);
+        }
+    });
+
+    ytdlp.stdout.pipe(ffmpeg.stdin);
+
+    const resource = createAudioResource(ffmpeg.stdout, {
+        inputType: StreamType.Raw,
+        inlineVolume: true,
+    });
+
+    if (resource.volume) {
+        resource.volume.setVolume(0.45);
+    }
 
     return {
         resource,
-        ytdlp: null,
+        ytdlp,
         ffmpeg,
     };
 }
