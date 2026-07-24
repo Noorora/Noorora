@@ -11,8 +11,6 @@ const {
     VoiceConnectionStatus,
 } = require('@discordjs/voice');
 
-const ffmpegStatic = require('ffmpeg-static');
-
 const guildPlayers = new Map();
 
 function getYtDlpPath() {
@@ -116,76 +114,9 @@ async function getVideoInfo(url) {
     });
 }
 
-async function getAudioStreamUrl(url) {
-    const ytDlpPath = getYtDlpPath();
-
-    return new Promise((resolve, reject) => {
-        const child = spawn(
-            ytDlpPath,
-            [
-                '--no-playlist',
-                '-f',
-                'bestaudio/best',
-                '--get-url',
-                '--no-warnings',
-                url,
-            ],
-            {
-                stdio: ['ignore', 'pipe', 'pipe'],
-            },
-        );
-
-        let stdout = '';
-        let stderr = '';
-        let settled = false;
-
-        child.stdout.on('data', (chunk) => {
-            stdout += chunk.toString();
-        });
-
-        child.stderr.on('data', (chunk) => {
-            stderr += chunk.toString();
-        });
-
-        child.on('error', (error) => {
-            if (settled) return;
-            settled = true;
-            reject(error);
-        });
-
-        child.on('close', (code) => {
-            if (settled) return;
-            settled = true;
-
-            if (code !== 0) {
-                reject(
-                    new Error(
-                        stderr || `yt-dlp が終了コード ${code} で終了しました。`,
-                    ),
-                );
-                return;
-            }
-
-            const streamUrl = stdout
-                .split('\n')
-                .map((line) => line.trim())
-                .filter(Boolean)[0];
-
-            if (!streamUrl) {
-                reject(new Error('yt-dlp から音声URLを取得できませんでした。'));
-                return;
-            }
-
-            resolve(streamUrl);
-        });
-    });
-}
-
 function createAudioStream(url, volume = 0.45) {
     const ytDlpPath = getYtDlpPath();
     const ffmpegPath = getFfmpegPath();
-
-    console.log('[music] starting yt-dlp pipe stream');
 
     const ytdlp = spawn(
         ytDlpPath,
@@ -206,24 +137,14 @@ function createAudioStream(url, volume = 0.45) {
         console.error('[music yt-dlp spawn error]', error);
     });
 
-    ytdlp.stderr.on('data', (chunk) => {
-        const text = chunk.toString().trim();
-
-        if (text) {
-            console.warn('[music yt-dlp]', text);
-        }
-    });
-
-    ytdlp.on('close', (code, signal) => {
-        console.log(`[music yt-dlp] exited with code ${code}, signal ${signal}`);
-    });
+    ytdlp.stderr.on('data', () => { });
 
     const ffmpeg = spawn(
         ffmpegPath,
         [
             '-hide_banner',
             '-loglevel',
-            'warning',
+            'error',
 
             '-re',
             '-i',
@@ -247,20 +168,12 @@ function createAudioStream(url, volume = 0.45) {
         console.error('[music ffmpeg spawn error]', error);
     });
 
-    ffmpeg.stderr.on('data', (chunk) => {
-        const text = chunk.toString().trim();
-
-        if (text) {
-            console.warn('[music ffmpeg]', text);
-        }
-    });
-
-    ffmpeg.on('close', (code, signal) => {
-        console.log(`[music ffmpeg] exited with code ${code}, signal ${signal}`);
-    });
+    ffmpeg.stderr.on('data', () => { });
 
     ytdlp.stdout.on('error', (error) => {
-        console.error('[music yt-dlp stdout error]', error);
+        if (error.code !== 'EPIPE') {
+            console.error('[music yt-dlp stdout error]', error);
+        }
     });
 
     ffmpeg.stdin.on('error', (error) => {
@@ -295,15 +208,8 @@ class GuildMusicPlayer {
         this.connection = null;
         this.audioPlayer = createAudioPlayer();
         this.textChannel = null;
-
         this.volume = 0.45;
         this.currentResource = null;
-
-        this.audioPlayer.on('stateChange', (oldState, newState) => {
-            console.log(
-                `[music] audio player state: ${oldState.status} -> ${newState.status}`,
-            );
-        });
 
         this.audioPlayer.on(AudioPlayerStatus.Idle, () => {
             this.cleanupCurrentProcesses();
@@ -356,12 +262,6 @@ class GuildMusicPlayer {
             guildId: voiceChannel.guild.id,
             adapterCreator: voiceChannel.guild.voiceAdapterCreator,
             selfDeaf: true,
-        });
-
-        this.connection.on('stateChange', (oldState, newState) => {
-            console.log(
-                `[music] voice connection state: ${oldState.status} -> ${newState.status}`,
-            );
         });
 
         this.connection.subscribe(this.audioPlayer);
@@ -422,7 +322,6 @@ class GuildMusicPlayer {
         };
 
         this.textChannel = interaction.channel;
-
         this.volume = volume;
 
         await this.ensureConnection(voiceChannel);
@@ -467,7 +366,7 @@ class GuildMusicPlayer {
         let stream;
 
         try {
-            stream = await createAudioStream(
+            stream = createAudioStream(
                 next.url,
                 this.volume,
             );
@@ -598,6 +497,7 @@ class GuildMusicPlayer {
 
     cleanupCurrentProcesses() {
         if (!this.current) {
+            this.currentResource = null;
             return;
         }
 
