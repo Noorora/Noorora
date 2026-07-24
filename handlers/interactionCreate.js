@@ -28,6 +28,7 @@ const commands = new Map(
 const publicCommandNames = new Set([
     'help',
     'joined',
+    'music',
 ]);
 
 async function hasBotCommandPermission(interaction, context) {

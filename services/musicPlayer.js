@@ -181,7 +181,7 @@ async function getAudioStreamUrl(url) {
     });
 }
 
-function createAudioStream(url) {
+function createAudioStream(url, volume = 0.45) {
     const ytDlpPath = getYtDlpPath();
     const ffmpegPath = getFfmpegPath();
 
@@ -277,7 +277,7 @@ function createAudioStream(url) {
     });
 
     if (resource.volume) {
-        resource.volume.setVolume(0.45);
+        resource.volume.setVolume(volume);
     }
 
     return {
@@ -295,6 +295,9 @@ class GuildMusicPlayer {
         this.connection = null;
         this.audioPlayer = createAudioPlayer();
         this.textChannel = null;
+
+        this.volume = 0.45;
+        this.currentResource = null;
 
         this.audioPlayer.on('stateChange', (oldState, newState) => {
             console.log(
@@ -370,7 +373,7 @@ class GuildMusicPlayer {
         );
     }
 
-    async enqueue(interaction, url) {
+    async enqueue(interaction, url, volume = 0.45) {
         if (!isAllowedUrl(url)) {
             return {
                 ok: false,
@@ -420,6 +423,8 @@ class GuildMusicPlayer {
 
         this.textChannel = interaction.channel;
 
+        this.volume = volume;
+
         await this.ensureConnection(voiceChannel);
 
         this.queue.push(track);
@@ -462,7 +467,10 @@ class GuildMusicPlayer {
         let stream;
 
         try {
-            stream = await createAudioStream(next.url);
+            stream = await createAudioStream(
+                next.url,
+                this.volume,
+            );
         } catch (error) {
             console.error('[music] createAudioStream error:', error);
 
@@ -482,6 +490,8 @@ class GuildMusicPlayer {
             ytdlp,
             ffmpeg,
         } = stream;
+
+        this.currentResource = resource;
 
         next.ytdlp = ytdlp;
         next.ffmpeg = ffmpeg;
@@ -575,6 +585,17 @@ class GuildMusicPlayer {
         return lines.join('\n');
     }
 
+    setVolume(volume) {
+        this.volume = volume;
+
+        if (
+            this.currentResource &&
+            this.currentResource.volume
+        ) {
+            this.currentResource.volume.setVolume(volume);
+        }
+    }
+
     cleanupCurrentProcesses() {
         if (!this.current) {
             return;
@@ -587,6 +608,8 @@ class GuildMusicPlayer {
         if (this.current.ffmpeg && !this.current.ffmpeg.killed) {
             this.current.ffmpeg.kill('SIGKILL');
         }
+
+        this.currentResource = null;
     }
 
     destroyConnection() {
