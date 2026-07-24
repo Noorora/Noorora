@@ -34,6 +34,15 @@ async function hasBotCommandPermission(interaction, context) {
         return false;
     }
 
+    const ownerUserId = process.env.BOT_OWNER_USER_ID;
+
+    if (
+        ownerUserId &&
+        interaction.user?.id === ownerUserId
+    ) {
+        return true;
+    }
+
     const memberPermissions = interaction.memberPermissions;
 
     if (
