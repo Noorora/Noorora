@@ -13,6 +13,11 @@ const { handleForwardEditRelay } = require('./events/forwardRelay');
 const { handleForumThreadCreate } = require('./events/forumThreadCreate');
 const { registerVoiceStateRelay } = require('./events/voiceStateRelay');
 
+const {
+    startRedisSyncService,
+    syncRedisClientToUrl,
+} = require('./services/redisSyncService');
+
 if (process.env.RUN_ON_RENDER !== 'true') {
     console.log('ローカル実行は禁止されています。終了します。');
     process.exit(0);
@@ -33,12 +38,27 @@ if (!REDIS_URL) {
 
 const isFailoverSub = process.env.FAILOVER_SUB === 'true';
 const primaryHealthUrl = process.env.PRIMARY_HEALTH_URL || '';
+
 const failoverCheckIntervalMs = Number(
     process.env.FAILOVER_CHECK_INTERVAL_MS || 30000,
 );
+
 const failoverFailureThreshold = Number(
     process.env.FAILOVER_FAILURE_THRESHOLD || 2,
 );
+
+const syncFromMainRedis = process.env.SYNC_FROM_MAIN_REDIS === 'true';
+const mainRedisUrl = process.env.MAIN_REDIS_URL || '';
+
+const redisSyncIntervalMs = Number(
+    process.env.REDIS_SYNC_INTERVAL_MS || 300000,
+);
+
+const redisSyncDeleteStaleKeys =
+    process.env.REDIS_SYNC_DELETE_STALE_KEYS === 'true';
+
+const syncSubToMainOnFailback =
+    process.env.SYNC_SUB_TO_MAIN_ON_FAILBACK === 'true';
 
 const kv = createClient({
     url: REDIS_URL,
@@ -53,6 +73,7 @@ let context = null;
 let botState = 'stopped';
 let isStarting = false;
 let isStopping = false;
+let isFailbackSyncing = false;
 let primaryFailureCount = 0;
 
 const app = express();
@@ -73,6 +94,9 @@ app.get('/status', (req, res) => {
         botState,
         primaryHealthUrl: primaryHealthUrl || null,
         primaryFailureCount,
+        syncFromMainRedis,
+        syncSubToMainOnFailback,
+        mainRedisConfigured: Boolean(mainRedisUrl),
     });
 });
 
@@ -187,6 +211,7 @@ async function checkPrimaryHealth() {
     }
 
     const controller = new AbortController();
+
     const timeout = setTimeout(() => {
         controller.abort();
     }, 8000);
@@ -205,6 +230,60 @@ async function checkPrimaryHealth() {
     }
 }
 
+async function syncSubRedisToMainRedis() {
+    if (!syncSubToMainOnFailback) {
+        return true;
+    }
+
+    if (!mainRedisUrl) {
+        console.warn(
+            '[redis-failback] SYNC_SUB_TO_MAIN_ON_FAILBACK=true ですが MAIN_REDIS_URL が設定されていません。',
+        );
+
+        return false;
+    }
+
+    if (isFailbackSyncing) {
+        return false;
+    }
+
+    isFailbackSyncing = true;
+
+    try {
+        console.log('[redis-failback] Sub Redis から Main Redis へ書き戻します。');
+
+        const result = await syncRedisClientToUrl({
+            sourceRedisClient: kv,
+            targetRedisUrl: mainRedisUrl,
+            deleteStaleKeys: redisSyncDeleteStaleKeys,
+            label: 'redis-failback',
+        });
+
+        if (!result.ok) {
+            console.warn(
+                `[redis-failback] 書き戻しを完了できませんでした。reason=${result.reason}`,
+            );
+
+            return false;
+        }
+
+        console.log(
+            `[redis-failback] 書き戻し完了 copied=${result.copied}, deleted=${result.deleted}, skipped=${result.skipped}`,
+        );
+
+        return true;
+    } catch (error) {
+        console.warn(
+            '[redis-failback] 書き戻し失敗:',
+            error.message,
+        );
+
+        return false;
+    } finally {
+        isFailbackSyncing = false;
+    }
+}
+
 async function evaluateFailover() {
     const primaryIsHealthy = await checkPrimaryHealth();
 
@@ -212,6 +291,16 @@ async function evaluateFailover() {
         primaryFailureCount = 0;
 
         if (client) {
+            const synced = await syncSubRedisToMainRedis();
+
+            if (!synced && syncSubToMainOnFailback) {
+                console.warn(
+                    '[failover] Main復旧を検知しましたが、Sub RedisからMain Redisへの書き戻しに失敗したため、Sub Botを停止しません。',
+                );
+
+                return;
+            }
+
             await stopDiscordBot('メインBotが復旧したため');
         } else {
             botState = 'standby';
@@ -234,6 +323,15 @@ async function evaluateFailover() {
 
 async function startMainProcess() {
     await kv.connect();
+
+    startRedisSyncService({
+        enabled: syncFromMainRedis,
+        sourceRedisUrl: mainRedisUrl,
+        targetRedisClient: kv,
+        getBotState: () => botState,
+        intervalMs: redisSyncIntervalMs,
+        deleteStaleKeys: redisSyncDeleteStaleKeys,
+    });
 
     app.listen(PORT, '0.0.0.0', () => {
         console.log(`HTTP server listening on ${PORT}`);
