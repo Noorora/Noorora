@@ -3,6 +3,9 @@ const {
     ButtonBuilder,
     ButtonStyle,
     RoleSelectMenuBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
 } = require('discord.js');
 
 const { ephemeralOptions } = require('../utils/ephemeral');
@@ -18,7 +21,10 @@ function buildOptionMenuContent() {
         '現在のBot管理ロール設定を表示します。',
         '',
         '➕ **管理ロール設定**',
-        'このBotの管理系コマンドを使えるロールを設定します。',
+        '一覧からBot管理ロールを選択して設定します。',
+        '',
+        '🆔 **管理ロールID設定**',
+        '一覧にロールが出てこない場合、ロールIDを直接入力して設定します。',
         '',
         '🗑️ **管理ロール解除**',
         'Bot管理ロール設定を解除します。',
@@ -49,6 +55,13 @@ function buildOptionMenuComponents() {
                 .setEmoji('🗑️')
                 .setStyle(ButtonStyle.Danger),
         ),
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('option_menu_set_admin_role_by_id')
+                .setLabel('管理ロールID設定')
+                .setEmoji('🆔')
+                .setStyle(ButtonStyle.Secondary),
+        ),
     ];
 }
 
@@ -62,6 +75,22 @@ function buildAdminRoleSelectMenu() {
                 .setMaxValues(1),
         ),
     ];
+}
+
+function buildAdminRoleIdModal() {
+    return new ModalBuilder()
+        .setCustomId('option_admin_role_id_modal')
+        .setTitle('Bot管理ロールID設定')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('role_id')
+                    .setLabel('Bot管理ロールにするロールID')
+                    .setPlaceholder('例: 123456789012345678')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true),
+            ),
+        );
 }
 
 async function showOptionSettings(interaction, kv) {
@@ -106,7 +135,11 @@ async function handleComponent(interaction, context) {
 
     if (interaction.isButton()) {
         if (interaction.customId === 'option_menu_show') {
-            await showOptionSettings(interaction, kv);
+            await showOptionSettings(
+                interaction,
+                kv,
+            );
+
             return true;
         }
 
@@ -116,6 +149,14 @@ async function handleComponent(interaction, context) {
                     content: 'Bot管理ロールにするロールを選択してください。',
                     components: buildAdminRoleSelectMenu(),
                 }),
+            );
+
+            return true;
+        }
+
+        if (interaction.customId === 'option_menu_set_admin_role_by_id') {
+            await interaction.showModal(
+                buildAdminRoleIdModal(),
             );
 
             return true;
@@ -156,17 +197,79 @@ async function handleComponent(interaction, context) {
         if (interaction.customId === 'option_select_admin_role') {
             const roleId = interaction.values[0];
 
+            const role = await interaction.guild.roles
+                .fetch(roleId)
+                .catch(() => null);
+
+            if (!role) {
+                await interaction.update({
+                    content: '選択されたロールが見つかりませんでした。',
+                    components: [],
+                });
+
+                return true;
+            }
+
             await kv.set(
                 botAdminRoleKey(interaction.guildId),
-                roleId,
+                role.id,
             );
 
             await interaction.update({
                 content:
-                    `Bot管理ロールを <@&${roleId}> に設定しました。\n` +
+                    `Bot管理ロールを <@&${role.id}> に設定しました。\n` +
                     `このロールを持つ人は、管理系コマンドを使用できます。`,
                 components: [],
             });
+
+            return true;
+        }
+
+        return false;
+    }
+
+    if (interaction.isModalSubmit()) {
+        if (interaction.customId === 'option_admin_role_id_modal') {
+            const roleId = interaction.fields
+                .getTextInputValue('role_id')
+                .trim();
+
+            if (!/^\d{17,20}$/.test(roleId)) {
+                await interaction.reply(
+                    ephemeralOptions({
+                        content: 'ロールIDの形式が正しくありません。17〜20桁程度のDiscord IDを指定してください。',
+                    }),
+                );
+
+                return true;
+            }
+
+            const role = await interaction.guild.roles
+                .fetch(roleId)
+                .catch(() => null);
+
+            if (!role) {
+                await interaction.reply(
+                    ephemeralOptions({
+                        content: `ロールID ${roleId} のロールがこのサーバー内で見つかりませんでした。`,
+                    }),
+                );
+
+                return true;
+            }
+
+            await kv.set(
+                botAdminRoleKey(interaction.guildId),
+                role.id,
+            );
+
+            await interaction.reply(
+                ephemeralOptions({
+                    content:
+                        `Bot管理ロールを <@&${role.id}> に設定しました。\n` +
+                        `このロールを持つ人は、管理系コマンドを使用できます。`,
+                }),
+            );
 
             return true;
         }
