@@ -18,6 +18,7 @@ const commandModules = [
     require('../commands/hasrole'),
     require('../commands/joined'),
     require('../commands/pins'),
+    require('../commands/music'),
 ];
 
 const commands = new Map(

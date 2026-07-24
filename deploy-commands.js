@@ -86,6 +86,11 @@ const commands = [
         .setName('joined')
         .setDescription('自分がこのサーバーに参加してからの日数を表示します')
         .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('music')
+        .setDescription('Music再生メニューを表示します')
+        .toJSON(),
 ];
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
