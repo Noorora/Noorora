@@ -11,6 +11,7 @@ const {
 
 const { ephemeralOptions } = require('../utils/ephemeral');
 const { splitLinesToMessages } = require('../utils/messageSplit');
+const { addAuditLog } = require('../utils/auditLog');
 const { FORWARD_ALL_CHANNELS } = require('../config/constants');
 
 const {
@@ -245,6 +246,13 @@ async function addForwardWebhook(interaction, kv, sourceChannelId, sourceChannel
         sourceChannelId,
     );
 
+    await addAuditLog(
+        interaction,
+        kv,
+        '転送設定追加',
+        `転送元 ${sourceChannel ? `<#${sourceChannel.id}>` : 'サーバー全体'} にWebhook転送設定を追加しました。`,
+    );
+
     await interaction.reply(ephemeralOptions({
         content:
             `転送設定を登録しました。\n` +
@@ -282,49 +290,18 @@ async function removeForwardWebhook(interaction, kv, sourceChannelId, sourceChan
         );
     }
 
+    await addAuditLog(
+        interaction,
+        kv,
+        '転送設定削除',
+        `転送元 ${sourceChannel ? `<#${sourceChannel.id}>` : 'サーバー全体'} のWebhook転送設定を削除しました。`,
+    );
+
     await interaction.reply(ephemeralOptions({
         content:
             `転送設定を削除しました。\n` +
             `転送元: ${sourceChannel ? `<#${sourceChannel.id}>` : 'サーバー全体'}`,
     }));
-}
-
-async function handleExclude(interaction, kv, sub) {
-    if (sub === 'add') {
-        const channel = interaction.options.getChannel('channel', true);
-
-        await kv.sAdd(
-            forwardExcludeChannelsKey(interaction.guildId),
-            channel.id,
-        );
-
-        await interaction.reply(ephemeralOptions({
-            content:
-                `鯖全体転送の除外チャンネルに追加しました。\n` +
-                `除外: <#${channel.id}>`,
-        }));
-        return;
-    }
-
-    if (sub === 'remove') {
-        const channel = interaction.options.getChannel('channel', true);
-
-        const removed = await kv.sRem(
-            forwardExcludeChannelsKey(interaction.guildId),
-            channel.id,
-        );
-
-        await interaction.reply(ephemeralOptions({
-            content: removed
-                ? `鯖全体転送の除外チャンネルから削除しました。\n解除: <#${channel.id}>`
-                : `そのチャンネルは除外一覧にありませんでした。\n対象: <#${channel.id}>`,
-        }));
-        return;
-    }
-
-    if (sub === 'show') {
-        await showExcludeChannels(interaction, kv);
-    }
 }
 
 async function showExcludeChannels(interaction, kv) {
@@ -358,6 +335,13 @@ async function showExcludeChannels(interaction, kv) {
 
             removedLines.push(
                 `・除外チャンネル <#${channelId}> が見つからないため、除外一覧から削除しました。`,
+            );
+
+            await addAuditLog(
+                interaction,
+                kv,
+                '転送除外設定自動削除',
+                `除外チャンネル <#${channelId}> が見つからないため、除外一覧から削除しました。`,
             );
 
             continue;
@@ -399,27 +383,6 @@ async function showExcludeChannels(interaction, kv) {
     }
 }
 
-async function handleAllow(interaction, context, sub) {
-    const { client, kv } = context;
-
-    const sourceChannel = interaction.options.getChannel('source_channel', false);
-    const sourceChannelId = sourceChannel ? sourceChannel.id : FORWARD_ALL_CHANNELS;
-
-    const type = interaction.options.getString('type', true);
-    const id = interaction.options.getString('id', true).trim();
-
-    await applyAllowSetting(
-        interaction,
-        client,
-        kv,
-        sub,
-        type,
-        id,
-        sourceChannelId,
-        sourceChannel,
-    );
-}
-
 async function applyAllowSetting(interaction, client, kv, mode, type, id, sourceChannelId, sourceChannel) {
     if (!['bot', 'webhook'].includes(type)) {
         await interaction.reply(ephemeralOptions({
@@ -445,17 +408,28 @@ async function applyAllowSetting(interaction, client, kv, mode, type, id, source
         ? forwardAllowedBotsKey
         : forwardAllowedWebhooksKey;
 
+    const targetLabel = type === 'bot'
+        ? 'Bot'
+        : 'Webhook';
+
     if (mode === 'add') {
         await kv.sAdd(
             keyFactory(interaction.guildId, sourceChannelId),
             id,
         );
 
+        await addAuditLog(
+            interaction,
+            kv,
+            '転送許可対象追加',
+            `転送元 ${sourceChannel ? `<#${sourceChannel.id}>` : 'サーバー全体'} に許可${targetLabel} ID ${id} を追加しました。`,
+        );
+
         await interaction.reply(ephemeralOptions({
             content:
-                `転送許可${type === 'bot' ? 'Bot' : 'Webhook'}を追加しました。\n` +
+                `転送許可${targetLabel}を追加しました。\n` +
                 `転送元: ${sourceChannel ? `<#${sourceChannel.id}>` : 'サーバー全体'}\n` +
-                `${type === 'bot' ? 'Bot' : 'Webhook'} ID: ${id}`,
+                `${targetLabel} ID: ${id}`,
         }));
         return;
     }
@@ -466,9 +440,18 @@ async function applyAllowSetting(interaction, client, kv, mode, type, id, source
             id,
         );
 
+        if (removed) {
+            await addAuditLog(
+                interaction,
+                kv,
+                '転送許可対象削除',
+                `転送元 ${sourceChannel ? `<#${sourceChannel.id}>` : 'サーバー全体'} から許可${targetLabel} ID ${id} を削除しました。`,
+            );
+        }
+
         await interaction.reply(ephemeralOptions({
             content: removed
-                ? `転送許可${type === 'bot' ? 'Bot' : 'Webhook'}を削除しました。\n転送元: ${sourceChannel ? `<#${sourceChannel.id}>` : 'サーバー全体'}\n${type === 'bot' ? 'Bot' : 'Webhook'} ID: ${id}`
+                ? `転送許可${targetLabel}を削除しました。\n転送元: ${sourceChannel ? `<#${sourceChannel.id}>` : 'サーバー全体'}\n${targetLabel} ID: ${id}`
                 : `転送元 ${sourceChannel ? `<#${sourceChannel.id}>` : 'サーバー全体'} の許可一覧に ${id} はありませんでした。`,
         }));
     }
@@ -521,6 +504,13 @@ async function handleShow(interaction, kv) {
 
                 removedLines.push(
                     `・転送元 <#${sourceChannelId}> が見つからないため、その転送設定と許可設定を削除しました。`,
+                );
+
+                await addAuditLog(
+                    interaction,
+                    kv,
+                    '転送設定自動削除',
+                    `転送元 <#${sourceChannelId}> が見つからないため、その転送設定と許可設定を削除しました。`,
                 );
 
                 continue;
@@ -596,10 +586,6 @@ async function handleComponent(interaction, context) {
     const { client, kv } = context;
 
     if (interaction.isButton()) {
-        // =========================================================
-        // 1段目: 転送設定
-        // 📋 一覧 → ➕ 追加 → 🗑️ 削除
-        // =========================================================
         if (interaction.customId === 'forward_menu_show') {
             await handleShow(interaction, kv);
             return true;
@@ -652,10 +638,6 @@ async function handleComponent(interaction, context) {
             return true;
         }
 
-        // =========================================================
-        // 2段目: 除外チャンネル
-        // 📋 一覧 → ➕ 追加 → 🗑️ 削除/解除
-        // =========================================================
         if (interaction.customId === 'forward_menu_exclude_show') {
             await showExcludeChannels(interaction, kv);
             return true;
@@ -683,10 +665,6 @@ async function handleComponent(interaction, context) {
             return true;
         }
 
-        // =========================================================
-        // 3段目: 許可対象
-        // 📋 一覧 → ➕ 追加 → 🗑️ 削除
-        // =========================================================
         if (interaction.customId === 'forward_menu_allow_show') {
             await handleShow(interaction, kv);
             return true;
@@ -736,6 +714,13 @@ async function handleComponent(interaction, context) {
                 channelId,
             );
 
+            await addAuditLog(
+                interaction,
+                kv,
+                '転送除外チャンネル追加',
+                `鯖全体転送の除外チャンネルに <#${channelId}> を追加しました。`,
+            );
+
             await interaction.update(ephemeralOptions({
                 content:
                     `鯖全体転送の除外チャンネルに追加しました。\n` +
@@ -752,6 +737,15 @@ async function handleComponent(interaction, context) {
                 forwardExcludeChannelsKey(interaction.guildId),
                 channelId,
             );
+
+            if (removed) {
+                await addAuditLog(
+                    interaction,
+                    kv,
+                    '転送除外チャンネル解除',
+                    `鯖全体転送の除外チャンネルから <#${channelId}> を解除しました。`,
+                );
+            }
 
             await interaction.update(ephemeralOptions({
                 content: removed
