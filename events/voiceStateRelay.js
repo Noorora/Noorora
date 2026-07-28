@@ -1,5 +1,18 @@
 const { WebhookClient } = require('discord.js');
 
+function formatJstDateTime(date = new Date()) {
+    return new Intl.DateTimeFormat('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    }).format(date);
+}
+
 const {
     forwardWebhookTargetsKey,
     forwardExcludeChannelsKey,
@@ -14,14 +27,16 @@ const {
 } = require('../utils/member');
 
 function formatDateTime(timestamp) {
-    return new Date(timestamp).toLocaleString('ja-JP', {
+    return new Intl.DateTimeFormat('ja-JP', {
+        timeZone: 'Asia/Tokyo',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-    });
+        hour12: false,
+    }).format(new Date(timestamp));
 }
 
 function getMemberDisplayName(member) {
