@@ -200,6 +200,9 @@ async function startDiscordBot(reason = 'start requested') {
 
         console.log(`Discord Bot を起動します: ${reason}`);
 
+        console.log('TOKEN exists:', !!TOKEN);
+        console.log('TOKEN length:', TOKEN ? TOKEN.length : 0);
+
         await Promise.race([
             client.login(TOKEN),
             new Promise((_, reject) => {
