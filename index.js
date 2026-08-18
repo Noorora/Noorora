@@ -140,6 +140,18 @@ async function startDiscordBot(reason = 'start requested') {
             kv,
         };
 
+        client.on('debug', (message) => {
+            console.log('[discord.js debug]', message);
+        });
+
+        client.on('shardError', (error, shardId) => {
+            console.error('[discord.js shardError]', shardId, error);
+        });
+
+        client.on('warn', (message) => {
+            console.warn('[discord.js warn]', message);
+        });
+
         client.once(Events.ClientReady, (readyClient) => {
             botState = 'running';
             console.log(`ログイン完了: ${readyClient.user.tag}`);
