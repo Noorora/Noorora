@@ -144,6 +144,34 @@ async function startDiscordBot(reason = 'start requested') {
             console.log(`ログイン完了: ${readyClient.user.tag}`);
         });
 
+        client.on('error', (error) => {
+            console.error('Discord client error:', error);
+        });
+
+        client.on('warn', (message) => {
+            console.warn('Discord client warn:', message);
+        });
+
+        client.on('shardError', (error) => {
+            console.error('Discord shard error:', error);
+        });
+
+        client.on('shardDisconnect', (event, shardId) => {
+            console.warn('Discord shard disconnect:', {
+                shardId,
+                code: event.code,
+                reason: event.reason,
+            });
+        });
+
+        client.on('shardReconnecting', (shardId) => {
+            console.warn('Discord shard reconnecting:', shardId);
+        });
+
+        client.on('shardReady', (shardId) => {
+            console.log('Discord shard ready:', shardId);
+        });
+
         client.on(
             Events.InteractionCreate,
             (interaction) => handleInteractionCreate(interaction, context),
@@ -172,7 +200,14 @@ async function startDiscordBot(reason = 'start requested') {
 
         console.log(`Discord Bot を起動します: ${reason}`);
 
-        await client.login(TOKEN);
+        await Promise.race([
+            client.login(TOKEN),
+            new Promise((_, reject) => {
+                setTimeout(() => {
+                    reject(new Error('Discord login timeout'));
+                }, 30000);
+            }),
+        ]);
     } catch (error) {
         console.error('Discord Bot 起動エラー:', error);
 
