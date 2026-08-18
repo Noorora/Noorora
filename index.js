@@ -84,7 +84,17 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-    res.status(200).send('ok');
+    if (isFailoverSub) {
+        res.status(200).send('ok');
+        return;
+    }
+
+    if (botState === 'running') {
+        res.status(200).send('ok');
+        return;
+    }
+
+    res.status(503).send(`not ready: ${botState}`);
 });
 
 app.get('/status', (req, res) => {
