@@ -6,6 +6,7 @@ const {
 
 const { createClient } = require('redis');
 const express = require('express');
+const crypto = require('crypto');
 
 const { handleInteractionCreate } = require('./handlers/interactionCreate');
 const { handleMessageCreate } = require('./handlers/messageCreate');
@@ -200,8 +201,14 @@ async function startDiscordBot(reason = 'start requested') {
 
         console.log(`Discord Bot を起動します: ${reason}`);
 
-        console.log('TOKEN exists:', !!TOKEN);
+        console.log('DISCORD_TOKEN exists:', !!process.env.DISCORD_TOKEN);
+        console.log('TOKEN exists:', !!process.env.TOKEN);
+        console.log('TOKEN variable exists:', !!TOKEN);
         console.log('TOKEN length:', TOKEN ? TOKEN.length : 0);
+        console.log(
+            'TOKEN fingerprint:',
+            TOKEN ? crypto.createHash('sha256').update(TOKEN).digest('hex').slice(0, 12) : 'none'
+        );
 
         await Promise.race([
             client.login(TOKEN),
