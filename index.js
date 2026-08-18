@@ -222,6 +222,48 @@ async function startDiscordBot(reason = 'start requested') {
             TOKEN ? crypto.createHash('sha256').update(TOKEN).digest('hex').slice(0, 12) : 'none'
         );
 
+        async function checkDiscordConnectivity(token) {
+            console.log('[discord preflight] start');
+
+            try {
+                const discordCom = await dns.lookup('discord.com');
+                console.log('[discord preflight] discord.com dns:', discordCom.address, discordCom.family);
+            } catch (error) {
+                console.error('[discord preflight] discord.com dns error:', error);
+            }
+
+            try {
+                const gatewayHost = await dns.lookup('gateway.discord.gg');
+                console.log('[discord preflight] gateway.discord.gg dns:', gatewayHost.address, gatewayHost.family);
+            } catch (error) {
+                console.error('[discord preflight] gateway.discord.gg dns error:', error);
+            }
+
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000);
+
+            try {
+                const response = await fetch('https://discord.com/api/v10/gateway/bot', {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bot ${token}`,
+                    },
+                    signal: controller.signal,
+                });
+
+                console.log('[discord preflight] gateway/bot status:', response.status);
+
+                const text = await response.text();
+                console.log('[discord preflight] gateway/bot body:', text.slice(0, 500));
+            } catch (error) {
+                console.error('[discord preflight] gateway/bot error:', error);
+            } finally {
+                clearTimeout(timeout);
+            }
+
+            console.log('[discord preflight] end');
+        }
+
         await Promise.race([
             client.login(TOKEN),
             new Promise((_, reject) => {
