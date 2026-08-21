@@ -147,6 +147,21 @@ function buildReactionEmojiModal(channelId) {
         );
 }
 
+function buildAllowedBotIdModal() {
+    return new ModalBuilder()
+        .setCustomId('reaction_allow_add_bot_id_modal')
+        .setTitle('許可Botを追加')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('bot_id')
+                    .setLabel('BotのユーザーID')
+                    .setPlaceholder('例: 123456789012345678')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true),
+            ),
+        );
+}
 function parseReactionRules(hash) {
     return Object.entries(hash).map(([field, emoji]) => {
         const separatorIndex = field.indexOf(':');
@@ -621,15 +636,8 @@ async function handleComponent(interaction, context) {
         }
 
         if (interaction.customId === 'reaction_menu_allow_add') {
-            await interaction.reply(
-                ephemeralOptions({
-                    content:
-                        '自動リアクション対象として許可するBotを選択してください。',
-                    components: buildReactionUserSelectMenu(
-                        'reaction_allow_add_select_user',
-                        '許可するBotを選択してください',
-                    ),
-                }),
+            await interaction.showModal(
+                buildAllowedBotIdModal(),
             );
 
             return true;
