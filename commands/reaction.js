@@ -20,6 +20,8 @@ const {
     reactionRuleField,
 } = require('../keys/redisKeys');
 
+const ALL_USERS_ID = '*';
+
 const allowedTargetTypes = [
     ChannelType.GuildText,
     ChannelType.PublicThread,
@@ -37,7 +39,7 @@ function buildReactionMenuContent() {
         '現在の自動リアクション設定を表示します。',
         '',
         '➕ **リアクション追加**',
-        '指定チャンネルで、指定ユーザーの投稿に自動リアクションを付けます。',
+        '指定チャンネル内のすべてのユーザーの投稿に自動リアクションを付けます。',
         '',
         '🗑️ **リアクション削除**',
         '自動リアクション設定を削除します。',
@@ -51,8 +53,11 @@ function buildReactionMenuContent() {
         '🚫 **許可Bot削除**',
         '許可Botを削除します。',
         '',
+        '🔎 **ID指定機能**',
+        '候補に出ないチャンネル、スレッド、BotをIDで直接指定できます。',
+        '',
         '⏪ **過去ログ一括リアクション**',
-        '指定チャンネルまたはスレッドにある過去メッセージすべてへ、一括でリアクションを付けます。',
+        '指定チャンネルまたはスレッドの既存メッセージすべてにリアクションを付けます。',
     ].join('\n');
 }
 
@@ -98,8 +103,18 @@ function buildReactionMenuComponents() {
         ),
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
+                .setCustomId('reaction_menu_add_by_id')
+                .setLabel('IDでリアクション追加')
+                .setEmoji('🔎')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('reaction_menu_allow_add_by_id')
+                .setLabel('IDでBot許可')
+                .setEmoji('🤖')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
                 .setCustomId('reaction_menu_bulk')
-                .setLabel('過去ログ一括リアクション')
+                .setLabel('過去ログ一括')
                 .setEmoji('⏪')
                 .setStyle(ButtonStyle.Secondary),
         ),
@@ -152,6 +167,47 @@ function buildReactionEmojiModal(channelId, userId) {
         );
 }
 
+
+function buildReactionAddByIdModal() {
+    return new ModalBuilder()
+        .setCustomId('reaction_add_by_id_modal')
+        .setTitle('IDで自動リアクションを追加')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('target_channel_id')
+                    .setLabel('チャンネルまたはスレッドのID')
+                    .setPlaceholder('例: 123456789012345678')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true),
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('emoji')
+                    .setLabel('付けるリアクション')
+                    .setPlaceholder('例: ✅ / <:emoji_name:123456789012345678>')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true),
+            ),
+        );
+}
+
+function buildAllowedBotByIdModal() {
+    return new ModalBuilder()
+        .setCustomId('reaction_allow_add_by_id_modal')
+        .setTitle('IDで許可Botを追加')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('bot_id')
+                    .setLabel('BotのユーザーID')
+                    .setPlaceholder('例: 123456789012345678')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true),
+            ),
+        );
+}
+
 function buildBulkReactionModal() {
     return new ModalBuilder()
         .setCustomId('reaction_bulk_modal')
@@ -177,37 +233,38 @@ function buildBulkReactionModal() {
 }
 
 function sleep(milliseconds) {
-    return new Promise((resolve) => {
-        setTimeout(resolve, milliseconds);
-    });
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function getComparableEmojiIdentifier(emojiInput) {
-    const customEmojiMatch = emojiInput.match(/^<a?:[^:]+:(\d+)>$/);
-    return customEmojiMatch ? customEmojiMatch[1] : emojiInput;
+    const match = emojiInput.match(/^<a?:[^:]+:(\d+)>$/);
+    return match ? match[1] : emojiInput;
 }
 
 function messageAlreadyHasOwnReaction(message, emojiInput) {
-    const emojiIdentifier = getComparableEmojiIdentifier(emojiInput);
-
+    const identifier = getComparableEmojiIdentifier(emojiInput);
     return message.reactions.cache.some((reaction) => {
-        if (!reaction.me) {
-            return false;
-        }
-
-        return (
-            reaction.emoji.id === emojiIdentifier ||
-            reaction.emoji.name === emojiIdentifier ||
+        return reaction.me && (
+            reaction.emoji.id === identifier ||
+            reaction.emoji.name === identifier ||
             reaction.emoji.toString() === emojiInput
         );
     });
 }
 
-async function reactToAllPastMessages(
-    interaction,
-    target_channel,
-    emoji,
-) {
+async function fetchValidTargetChannel(client, guildId, channelId) {
+    const target_channel = await client.channels.fetch(channelId).catch(() => null);
+    if (
+        !target_channel ||
+        target_channel.guildId !== guildId ||
+        !allowedTargetTypes.includes(target_channel.type)
+    ) {
+        return null;
+    }
+    return target_channel;
+}
+
+async function reactToAllPastMessages(interaction, target_channel, emoji) {
     let beforeMessageId;
     let checkedCount = 0;
     let addedCount = 0;
@@ -216,25 +273,17 @@ async function reactToAllPastMessages(
 
     while (true) {
         const fetchOptions = { limit: 100 };
-
-        if (beforeMessageId) {
-            fetchOptions.before = beforeMessageId;
-        }
+        if (beforeMessageId) fetchOptions.before = beforeMessageId;
 
         const messages = await target_channel.messages.fetch(fetchOptions);
-
-        if (messages.size === 0) {
-            break;
-        }
+        if (messages.size === 0) break;
 
         for (const message of messages.values()) {
             checkedCount++;
-
             if (messageAlreadyHasOwnReaction(message, emoji)) {
                 skippedCount++;
                 continue;
             }
-
             try {
                 await message.react(emoji);
                 addedCount++;
@@ -248,33 +297,21 @@ async function reactToAllPastMessages(
                     error,
                 });
             }
-
             await sleep(350);
         }
 
         beforeMessageId = messages.last().id;
-
         await interaction.editReply({
             content:
                 `過去ログを処理中です。\n` +
                 `対象チャンネル: <#${target_channel.id}>\n` +
                 `確認済み: ${checkedCount}件\n` +
-                `リアクション追加: ${addedCount}件\n` +
-                `付与済みでスキップ: ${skippedCount}件\n` +
-                `失敗: ${failedCount}件`,
+                `追加: ${addedCount}件 / スキップ: ${skippedCount}件 / 失敗: ${failedCount}件`,
         });
-
-        if (messages.size < 100) {
-            break;
-        }
+        if (messages.size < 100) break;
     }
 
-    return {
-        checkedCount,
-        addedCount,
-        skippedCount,
-        failedCount,
-    };
+    return { checkedCount, addedCount, skippedCount, failedCount };
 }
 
 function parseReactionRules(hash) {
@@ -334,6 +371,13 @@ async function showReactionSettings(interaction, kv) {
                 detail,
             );
 
+            continue;
+        }
+
+        if (rule.userId === ALL_USERS_ID) {
+            validLines.push(
+                `${validLines.length + 1}. 対象チャンネル: <#${rule.channelId}> / 対象: すべてのユーザー / 絵文字: ${rule.emoji}`,
+            );
             continue;
         }
 
@@ -529,7 +573,7 @@ async function addReactionRule(interaction, kv, targetChannel, user, emoji) {
         interaction,
         kv,
         '自動リアクション設定追加',
-        `対象チャンネル <#${targetChannel.id}> / ユーザー <@${user.id}> / 絵文字 ${emoji} の自動リアクション設定を追加しました。`,
+        `対象チャンネル <#${targetChannel.id}> / ${user.id === ALL_USERS_ID ? 'すべてのユーザー' : `ユーザー <@${user.id}>`} / 絵文字 ${emoji} の自動リアクション設定を追加しました。`,
     );
 
     await interaction.reply(
@@ -537,7 +581,7 @@ async function addReactionRule(interaction, kv, targetChannel, user, emoji) {
             content:
                 `自動リアクション設定を登録しました。\n` +
                 `対象チャンネル: <#${targetChannel.id}>\n` +
-                `ユーザー: <@${user.id}>\n` +
+                `対象: ${user.id === ALL_USERS_ID ? 'すべてのユーザー' : `<@${user.id}>`}\n` +
                 `絵文字: ${emoji}`,
         }),
     );
@@ -708,10 +752,18 @@ async function handleComponent(interaction, context) {
             return true;
         }
 
+        if (interaction.customId === 'reaction_menu_add_by_id') {
+            await interaction.showModal(buildReactionAddByIdModal());
+            return true;
+        }
+
+        if (interaction.customId === 'reaction_menu_allow_add_by_id') {
+            await interaction.showModal(buildAllowedBotByIdModal());
+            return true;
+        }
+
         if (interaction.customId === 'reaction_menu_bulk') {
-            await interaction.showModal(
-                buildBulkReactionModal(),
-            );
+            await interaction.showModal(buildBulkReactionModal());
             return true;
         }
 
@@ -721,17 +773,9 @@ async function handleComponent(interaction, context) {
     if (interaction.isChannelSelectMenu()) {
         if (interaction.customId === 'reaction_add_select_channel') {
             const channelId = interaction.values[0];
-
-            await interaction.update(
-                ephemeralOptions({
-                    content: `対象チャンネル: <#${channelId}>\n対象ユーザーを選択してください。`,
-                    components: buildReactionUserSelectMenu(
-                        `reaction_add_select_user:${channelId}`,
-                        '対象ユーザーを選択してください',
-                    ),
-                }),
+            await interaction.showModal(
+                buildReactionEmojiModal(channelId, ALL_USERS_ID),
             );
-
             return true;
         }
 
@@ -777,9 +821,9 @@ async function handleComponent(interaction, context) {
                 .fetch(channelId)
                 .catch(() => null);
 
-            const user = await client.users
-                .fetch(userId)
-                .catch(() => null);
+            const user = userId === ALL_USERS_ID
+                ? { id: ALL_USERS_ID }
+                : await client.users.fetch(userId).catch(() => null);
 
             if (!targetChannel || targetChannel.guildId !== interaction.guildId) {
                 await interaction.update(
@@ -928,84 +972,65 @@ async function handleComponent(interaction, context) {
     }
 
     if (interaction.isModalSubmit()) {
+        if (interaction.customId === 'reaction_add_by_id_modal') {
+            const channelId = interaction.fields.getTextInputValue('target_channel_id').trim();
+            const emoji = interaction.fields.getTextInputValue('emoji').trim();
+            const target_channel = await fetchValidTargetChannel(client, interaction.guildId, channelId);
+            if (!target_channel) {
+                await interaction.reply(ephemeralOptions({ content: '対象チャンネルまたはスレッドが見つからないか、設定対象にできません。' }));
+                return true;
+            }
+            await addReactionRule(interaction, kv, target_channel, { id: ALL_USERS_ID }, emoji);
+            return true;
+        }
+
+        if (interaction.customId === 'reaction_allow_add_by_id_modal') {
+            const botId = interaction.fields.getTextInputValue('bot_id').trim();
+            if (!/^\d{17,20}$/.test(botId)) {
+                await interaction.reply(ephemeralOptions({ content: '正しいBotユーザーIDを数字のみで入力してください。' }));
+                return true;
+            }
+            const member = await interaction.guild.members.fetch(botId).catch(() => null);
+            if (!member || !member.user.bot) {
+                await interaction.reply(ephemeralOptions({ content: 'そのIDのBotはこのサーバー内に見つかりませんでした。' }));
+                return true;
+            }
+            await addAllowedBot(interaction, kv, member.user);
+            return true;
+        }
+
         if (interaction.customId === 'reaction_bulk_modal') {
-            const channelId = interaction.fields
-                .getTextInputValue('target_channel_id')
-                .trim();
-
-            const emoji = interaction.fields
-                .getTextInputValue('emoji')
-                .trim();
-
-            if (!/^\d{17,20}$/.test(channelId)) {
-                await interaction.reply(
-                    ephemeralOptions({
-                        content: '正しいチャンネルまたはスレッドIDを、数字のみで入力してください。',
-                    }),
-                );
+            const channelId = interaction.fields.getTextInputValue('target_channel_id').trim();
+            const emoji = interaction.fields.getTextInputValue('emoji').trim();
+            const target_channel = await fetchValidTargetChannel(client, interaction.guildId, channelId);
+            if (!target_channel || !target_channel.messages) {
+                await interaction.reply(ephemeralOptions({ content: '対象チャンネルまたはスレッドが見つからないか、過去メッセージを取得できません。' }));
                 return true;
             }
 
-            const target_channel = await client.channels
-                .fetch(channelId)
-                .catch(() => null);
-
-            if (
-                !target_channel ||
-                target_channel.guildId !== interaction.guildId ||
-                !allowedTargetTypes.includes(target_channel.type) ||
-                !target_channel.messages
-            ) {
-                await interaction.reply(
-                    ephemeralOptions({
-                        content: '対象チャンネルまたはスレッドが見つからないか、過去メッセージを取得できません。',
-                    }),
-                );
-                return true;
-            }
-
-            await interaction.deferReply(
-                ephemeralOptions({}),
-            );
-
+            await interaction.deferReply(ephemeralOptions({}));
             try {
-                const result = await reactToAllPastMessages(
-                    interaction,
-                    target_channel,
-                    emoji,
-                );
-
+                const result = await reactToAllPastMessages(interaction, target_channel, emoji);
                 await addAuditLog(
                     interaction,
                     kv,
                     '過去ログ一括リアクション',
-                    `対象チャンネル <#${target_channel.id}> / ` +
-                    `絵文字 ${emoji} / ` +
-                    `確認 ${result.checkedCount}件 / ` +
-                    `追加 ${result.addedCount}件 / ` +
-                    `スキップ ${result.skippedCount}件 / ` +
-                    `失敗 ${result.failedCount}件`,
+                    `対象チャンネル <#${target_channel.id}> / 絵文字 ${emoji} / 確認 ${result.checkedCount}件 / 追加 ${result.addedCount}件 / スキップ ${result.skippedCount}件 / 失敗 ${result.failedCount}件`,
                 );
-
                 await interaction.editReply({
                     content:
                         `過去ログへの一括リアクションが完了しました。\n\n` +
                         `対象チャンネル: <#${target_channel.id}>\n` +
-                        `確認したメッセージ: ${result.checkedCount}件\n` +
-                        `リアクション追加: ${result.addedCount}件\n` +
-                        `付与済みでスキップ: ${result.skippedCount}件\n` +
+                        `確認: ${result.checkedCount}件\n` +
+                        `追加: ${result.addedCount}件\n` +
+                        `スキップ: ${result.skippedCount}件\n` +
                         `失敗: ${result.failedCount}件\n` +
                         `絵文字: ${emoji}`,
                 });
             } catch (error) {
                 console.error('過去ログ一括リアクション処理失敗:', error);
-
-                await interaction.editReply({
-                    content:
-                        '過去ログへの一括リアクション処理中にエラーが発生しました。Botの権限とRenderログを確認してください。',
-                });
+                await interaction.editReply({ content: '過去ログへの一括リアクション処理中にエラーが発生しました。' });
             }
-
             return true;
         }
 
