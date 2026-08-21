@@ -129,6 +129,22 @@ function buildReactionUserSelectMenu(customId, placeholder) {
     ];
 }
 
+function buildReactionTargetIdModal() {
+    return new ModalBuilder()
+        .setCustomId('reaction_add_target_id_modal')
+        .setTitle('対象チャンネルを指定')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('target_channel_id')
+                    .setLabel('チャンネルまたはスレッドのID')
+                    .setPlaceholder('例: 123456789012345678')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true),
+            ),
+        );
+}
+
 function buildReactionEmojiModal(channelId) {
     return new ModalBuilder()
         .setCustomId(`reaction_add_emoji_modal:${channelId}`)
@@ -601,15 +617,8 @@ async function handleComponent(interaction, context) {
         }
 
         if (interaction.customId === 'reaction_menu_add') {
-            await interaction.reply(
-                ephemeralOptions({
-                    content:
-                        '対象チャンネルまたはスレッドを選択してください。',
-                    components: buildReactionChannelSelectMenu(
-                        'reaction_add_select_channel',
-                        '対象チャンネルまたはスレッドを選択してください',
-                    ),
-                }),
+            await interaction.showModal(
+                buildReactionTargetIdModal(),
             );
 
             return true;
@@ -773,6 +782,63 @@ async function handleComponent(interaction, context) {
     }
 
     if (interaction.isModalSubmit()) {
+        if (
+            interaction.customId ===
+            'reaction_add_target_id_modal'
+        ) {
+            const targetChannelId = interaction.fields
+                .getTextInputValue('target_channel_id')
+                .trim();
+
+            if (!/^\d{17,20}$/.test(targetChannelId)) {
+                await interaction.reply(
+                    ephemeralOptions({
+                        content:
+                            '正しいチャンネルまたはスレッドIDを入力してください。数字のみで入力します。',
+                    }),
+                );
+
+                return true;
+            }
+
+            const target_channel = await interaction.guild.channels
+                .fetch(targetChannelId)
+                .catch(() => null);
+
+            if (!target_channel) {
+                await interaction.reply(
+                    ephemeralOptions({
+                        content:
+                            '指定されたチャンネルまたはスレッドが、このサーバー内に見つかりませんでした。',
+                    }),
+                );
+
+                return true;
+            }
+
+            if (
+                !allowedTargetTypes.includes(
+                    target_channel.type,
+                )
+            ) {
+                await interaction.reply(
+                    ephemeralOptions({
+                        content:
+                            '指定された場所にはメッセージを投稿できないため、自動リアクション対象に設定できません。',
+                    }),
+                );
+
+                return true;
+            }
+
+            await interaction.showModal(
+                buildReactionEmojiModal(
+                    target_channel.id,
+                ),
+            );
+
+            return true;
+        }
         if (
             interaction.customId.startsWith(
                 'reaction_add_emoji_modal:',
