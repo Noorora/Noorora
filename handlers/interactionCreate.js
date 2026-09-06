@@ -18,7 +18,7 @@ const commandModules = [
     require('../commands/hasrole'),
     require('../commands/joined'),
     require('../commands/pins'),
-    require('../commands/music'),
+    //require('../commands/music'),//サーバーの容量を食いすぎるので封印
 ];
 
 const commands = new Map(
@@ -89,6 +89,7 @@ async function rejectNoPermission(interaction) {
 }
 
 async function handleInteractionCreate(interaction, context) {
+
     if (
         interaction.isButton() ||
         interaction.isModalSubmit() ||
@@ -116,18 +117,36 @@ async function handleInteractionCreate(interaction, context) {
                 return;
             }
 
-            for (const command of commandModules) {
-                if (typeof command.handleComponent !== 'function') {
-                    continue;
-                }
+            const customId = interaction.customId || '';
 
-                const handled = await command.handleComponent(
-                    interaction,
-                    context,
-                );
+            const componentCommandName =
+                customId.split('_')[0];
 
-                if (handled) {
-                    return;
+            const componentCommand =
+                commands.get(componentCommandName);
+
+            if (
+                componentCommand &&
+                typeof componentCommand.handleComponent ===
+                'function'
+            ) {
+                try {
+                    const handled =
+                        await componentCommand.handleComponent(
+                            interaction,
+                            context,
+                        );
+
+                    if (handled) {
+                        return;
+                    }
+                } catch (error) {
+                    console.error(
+                        `[component] command=${componentCommandName} customId=${customId}`,
+                        error,
+                    );
+
+                    throw error;
                 }
             }
 
