@@ -7,6 +7,9 @@ const {
 const { createClient } = require('redis');
 const express = require('express');
 const crypto = require('crypto');
+const dns = require('dns').promises;
+
+const DISABLE_DISCORD_LOGIN = process.env.DISABLE_DISCORD_LOGIN === 'true';
 
 const { handleInteractionCreate } = require('./handlers/interactionCreate');
 const { handleMessageCreate } = require('./handlers/messageCreate');
@@ -173,6 +176,12 @@ async function startDiscordBot(reason = 'start requested') {
 
     isStarting = true;
     botState = 'starting';
+
+    if (DISABLE_DISCORD_LOGIN) {
+        console.log('Discord login is disabled by DISABLE_DISCORD_LOGIN=true');
+        botState = 'stopped';
+        return;
+    }
 
     try {
         client = createDiscordClient();

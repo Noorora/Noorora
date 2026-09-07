@@ -16,15 +16,19 @@ async function handleMessageReaction(message, context) {
         }
 
         // AutoDetector自身の投稿にはリアクションしない
-        if (message.author.id === client.user.id) {
+        if (
+            client.user &&
+            message.author.id === client.user.id
+        ) {
             return;
         }
 
         /*
-         * 人間の投稿は、投稿者に関係なく対象。
+         * Botによる投稿の場合は、
+         * 許可Bot一覧に登録されているBotだけを対象にする。
          *
-         * Botの投稿だけは、従来どおり
-         * 「許可Bot一覧」に登録されている場合のみ対象にする。
+         * 人間による投稿の場合は、
+         * 投稿者に関係なくそのまま処理を続ける。
          */
         if (message.author.bot) {
             const isAllowedBot = await kv.sIsMember(
@@ -38,13 +42,13 @@ async function handleMessageReaction(message, context) {
         }
 
         /*
-         * 投稿者IDではなく "*" を使用する。
+         * 投稿者IDではなく "*" の設定を取得する。
          *
-         * Redis上のフィールド:
-         * channelId:*
+         * Redis上の形式:
+         * チャンネルID:*
          *
-         * これにより、同じチャンネル内であれば
-         * 誰が投稿したかに関係なく同じ設定を取得する。
+         * これにより、設定されたチャンネル内では
+         * 誰が投稿しても同じリアクションを付ける。
          */
         const emoji = await kv.hGet(
             reactionRulesKey(message.guildId),
@@ -54,11 +58,12 @@ async function handleMessageReaction(message, context) {
             ),
         );
 
-        // このチャンネルに自動リアクション設定がない
+        // このチャンネルに設定がなければ何もしない
         if (!emoji) {
             return;
         }
 
+        // 設定されたリアクションを付ける
         await message.react(emoji);
     } catch (error) {
         console.error(
