@@ -100,6 +100,15 @@ const commands = [
                 )
                 .setRequired(true),
         )
+        .addStringOption((option) =>
+            option
+                .setName('message')
+                .setDescription(
+                    'Botから送信するメッセージ',
+                )
+                .setMaxLength(2000)
+                .setRequired(true),
+        )
         .toJSON(),
 
     new SlashCommandBuilder()
