@@ -78,6 +78,31 @@ const commands = [
         .toJSON(),
 
     new SlashCommandBuilder()
+        .setName('say')
+        .setDescription(
+            'Botから指定チャンネルへメッセージを送信します',
+        )
+        .setDefaultMemberPermissions(
+            PermissionFlagsBits.ManageGuild,
+        )
+        .addChannelOption((option) =>
+            option
+                .setName('target_channel')
+                .setDescription(
+                    'メッセージの送信先',
+                )
+                .addChannelTypes(
+                    ChannelType.GuildText,
+                    ChannelType.GuildAnnouncement,
+                    ChannelType.PublicThread,
+                    ChannelType.PrivateThread,
+                    ChannelType.AnnouncementThread,
+                )
+                .setRequired(true),
+        )
+        .toJSON(),
+
+    new SlashCommandBuilder()
         .setName('hasrole')
         .setDescription('ロール所持者確認メニューを表示します')
         .toJSON(),
@@ -85,11 +110,6 @@ const commands = [
     new SlashCommandBuilder()
         .setName('joined')
         .setDescription('自分がこのサーバーに参加してからの日数を表示します')
-        .toJSON(),
-
-    new SlashCommandBuilder()
-        .setName('music')
-        .setDescription('Music再生メニューを表示します')
         .toJSON(),
 ];
 

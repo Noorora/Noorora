@@ -18,6 +18,7 @@ const commandModules = [
     require('../commands/hasrole'),
     require('../commands/joined'),
     require('../commands/pins'),
+    require('../commands/say'),
     //require('../commands/music'),//サーバーの容量を食いすぎるので封印
 ];
 
