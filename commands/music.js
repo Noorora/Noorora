@@ -73,9 +73,6 @@ async function buildMusicMenuContent(kv, guildId) {
         '',
         '🔊 **音量設定**',
         'このサーバーでのMusicデフォルト音量を設定します。',
-        '',
-        '注意:',
-        '権利的に問題のない動画だけを再生してください。',
     ].join('\n');
 }
 
