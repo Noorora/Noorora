@@ -112,6 +112,13 @@ const commands = [
         .toJSON(),
 
     new SlashCommandBuilder()
+        .setName('music')
+        .setDescription(
+            '音楽再生メニューを表示します',
+        )
+        .toJSON(),
+
+    new SlashCommandBuilder()
         .setName('hasrole')
         .setDescription('ロール所持者確認メニューを表示します')
         .toJSON(),

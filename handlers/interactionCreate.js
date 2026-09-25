@@ -19,7 +19,7 @@ const commandModules = [
     require('../commands/joined'),
     require('../commands/pins'),
     require('../commands/say'),
-    //require('../commands/music'),//サーバーの容量を食いすぎるので封印
+    require('../commands/music'),//サーバーの容量を食いすぎるので封印
 ];
 
 const commands = new Map(
