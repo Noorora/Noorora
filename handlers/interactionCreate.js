@@ -82,6 +82,17 @@ function isPublicInteraction(interaction) {
     return false;
 }
 
+function isPublicComponentInteraction(
+    interaction,
+) {
+    const customId =
+        interaction.customId || '';
+
+    return customId.startsWith(
+        'music_',
+    );
+}
+
 async function rejectNoPermission(interaction) {
     await replyInteractionError(
         interaction,
@@ -108,14 +119,24 @@ async function handleInteractionCreate(interaction, context) {
         }
 
         try {
-            const permitted = await hasBotCommandPermission(
-                interaction,
-                context,
-            );
+            if (
+                !isPublicComponentInteraction(
+                    interaction,
+                )
+            ) {
+                const permitted =
+                    await hasBotCommandPermission(
+                        interaction,
+                        context,
+                    );
 
-            if (!permitted) {
-                await rejectNoPermission(interaction);
-                return;
+                if (!permitted) {
+                    await rejectNoPermission(
+                        interaction,
+                    );
+
+                    return;
+                }
             }
 
             const customId = interaction.customId || '';
