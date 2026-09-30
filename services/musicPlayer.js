@@ -33,19 +33,41 @@ function formatDuration(seconds) {
     return `${minutes}:${String(rest).padStart(2, '0')}`;
 }
 
+const allowedMusicHosts = new Set([
+    /*
+     * ニコニコ動画
+     */
+    'www.nicovideo.jp',
+    'nico.ms',
+    'sp.nicovideo.jp',
+
+    /*
+     * YouTube
+     */
+    'www.youtube.com',
+    'youtube.com',
+    'm.youtube.com',
+    'music.youtube.com',
+    'youtu.be',
+]);
+
 function isAllowedUrl(url) {
     if (!/^https?:\/\//i.test(url)) {
         return false;
     }
 
     try {
-        const parsed = new URL(url);
+        const parsedUrl =
+            new URL(url);
 
-        return [
-            'www.nicovideo.jp',
-            'nico.ms',
-            'sp.nicovideo.jp',
-        ].includes(parsed.hostname);
+        const hostname =
+            parsedUrl.hostname
+                .toLowerCase()
+                .replace(/\.$/, '');
+
+        return allowedMusicHosts.has(
+            hostname,
+        );
     } catch {
         return false;
     }
@@ -277,9 +299,16 @@ class GuildMusicPlayer {
         if (!isAllowedUrl(url)) {
             return {
                 ok: false,
-                message:
-                    '対応しているURLは、今のところニコニコ動画のURLのみです。\n' +
-                    '例: https://www.nicovideo.jp/watch/smxxxxxxxx',
+                message: [
+                    '対応しているURLではありません。',
+                    '',
+                    '対応サービス:',
+                    '・ニコニコ動画',
+                    '・YouTube',
+                    '・YouTube Music',
+                    '',
+                    'プレイリストURLには対応していません。',
+                ].join('\n'),
             };
         }
 

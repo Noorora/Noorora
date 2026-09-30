@@ -7,6 +7,13 @@ const {
     TextInputStyle,
 } = require('discord.js');
 
+function isMusicEnabled() {
+    return (
+        process.env.MUSIC_ENABLED ===
+        'true'
+    );
+}
+
 const { ephemeralOptions } = require('../utils/ephemeral');
 const { addAuditLog } = require('../utils/auditLog');
 const { getMusicPlayer } = require('../services/musicPlayer');
@@ -60,7 +67,7 @@ async function buildMusicMenuContent(kv, guildId) {
         `現在のデフォルト音量: **${formatVolumePercent(volume)}**`,
         '',
         '▶️ **再生**',
-        'ニコニコ動画のURLを入力して音声を再生またはキューに追加します。',
+        'ニコニコ動画またはYouTubeのURLを入力して、音声を再生またはキューに追加します。',
         '',
         '⏭️ **スキップ**',
         '現在再生中の曲をスキップします。',
@@ -120,7 +127,7 @@ function buildMusicPlayModal() {
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('url')
-                    .setLabel('ニコニコ動画URL')
+                    .setLabel('動画URL')
                     .setPlaceholder('https://www.nicovideo.jp/watch/smxxxxxxxx')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true),
@@ -144,21 +151,75 @@ function buildMusicVolumeModal(currentVolume) {
         );
 }
 
-async function execute(interaction, context) {
+async function execute(
+    interaction,
+    context,
+) {
+    if (!isMusicEnabled()) {
+        await interaction.reply(
+            ephemeralOptions({
+                content:
+                    'Music機能は、PC版AutoDetectorが起動しているときだけ使用できます。',
+            }),
+        );
+
+        return;
+    }
+
     const { kv } = context;
 
     await interaction.reply(
         ephemeralOptions({
-            content: await buildMusicMenuContent(
-                kv,
-                interaction.guildId,
-            ),
-            components: buildMusicMenuComponents(),
+            content:
+                await buildMusicMenuContent(
+                    kv,
+                    interaction.guildId,
+                ),
+
+            components:
+                buildMusicMenuComponents(),
         }),
     );
 }
 
-async function handleComponent(interaction, context) {
+async function handleComponent(
+    interaction,
+    context,
+) {
+    const customId =
+        interaction.customId || '';
+
+    if (
+        !customId.startsWith(
+            'music_',
+        )
+    ) {
+        return false;
+    }
+
+    if (!isMusicEnabled()) {
+        if (
+            interaction.deferred ||
+            interaction.replied
+        ) {
+            await interaction.followUp(
+                ephemeralOptions({
+                    content:
+                        'Music機能は、PC版AutoDetectorが起動しているときだけ使用できます。',
+                }),
+            );
+        } else {
+            await interaction.reply(
+                ephemeralOptions({
+                    content:
+                        'Music機能は、PC版AutoDetectorが起動しているときだけ使用できます。',
+                }),
+            );
+        }
+
+        return true;
+    }
+
     const { kv } = context;
 
     if (interaction.isButton()) {
