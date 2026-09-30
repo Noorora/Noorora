@@ -40,6 +40,46 @@ if (!REDIS_URL) {
     process.exit(1);
 }
 
+const instanceMode =
+    process.env.INSTANCE_MODE ||
+    'render';
+
+const isPcPrimary =
+    instanceMode === 'pc';
+
+const monitorPcPrimary =
+    process.env.MONITOR_PC_PRIMARY ===
+    'true';
+
+const pcHeartbeatKey =
+    process.env.PC_HEARTBEAT_KEY ||
+    'autodetector:pc-primary';
+
+const pcHeartbeatIntervalMs =
+    Number(
+        process.env
+            .PC_HEARTBEAT_INTERVAL_MS ||
+        10000,
+    );
+
+const pcHeartbeatTtlSeconds =
+    Number(
+        process.env
+            .PC_HEARTBEAT_TTL_SECONDS ||
+        30,
+    );
+
+const pcTakeoverDelayMs =
+    Number(
+        process.env
+            .PC_TAKEOVER_DELAY_MS ||
+        15000,
+    );
+
+let pcHeartbeatTimer = null;
+let pcMonitorTimer = null;
+let isShuttingDown = false;
+
 const isFailoverSub = process.env.FAILOVER_SUB === 'true';
 const primaryHealthUrl = process.env.PRIMARY_HEALTH_URL || '';
 
@@ -350,6 +390,147 @@ async function checkPrimaryHealth() {
     }
 }
 
+function sleep(milliseconds) {
+    return new Promise((resolve) => {
+        setTimeout(
+            resolve,
+            milliseconds,
+        );
+    });
+}
+
+async function writePcHeartbeat() {
+    const heartbeatValue =
+        JSON.stringify({
+            instance: 'pc',
+            processId: process.pid,
+            updatedAt:
+                new Date().toISOString(),
+        });
+
+    await kv.set(
+        pcHeartbeatKey,
+        heartbeatValue,
+        {
+            EX:
+                pcHeartbeatTtlSeconds,
+        },
+    );
+}
+
+async function startPcHeartbeat() {
+    if (pcHeartbeatTimer) {
+        return;
+    }
+
+    await writePcHeartbeat();
+
+    console.log(
+        `[pc-primary] ` +
+        `ハートビートを開始しました。` +
+        `key=${pcHeartbeatKey} / ` +
+        `ttl=${pcHeartbeatTtlSeconds}秒`,
+    );
+
+    pcHeartbeatTimer =
+        setInterval(() => {
+            writePcHeartbeat()
+                .catch((error) => {
+                    console.error(
+                        '[pc-primary] ' +
+                        'ハートビート更新エラー:',
+                        error,
+                    );
+                });
+        }, pcHeartbeatIntervalMs);
+}
+
+async function stopPcHeartbeat() {
+    if (pcHeartbeatTimer) {
+        clearInterval(
+            pcHeartbeatTimer,
+        );
+
+        pcHeartbeatTimer = null;
+    }
+
+    await kv.del(
+        pcHeartbeatKey,
+    ).catch(() => null);
+
+    console.log(
+        '[pc-primary] ' +
+        'ハートビートを停止しました。',
+    );
+}
+
+async function isPcPrimaryAlive() {
+    const exists =
+        await kv.exists(
+            pcHeartbeatKey,
+        );
+
+    return exists === 1;
+}
+
+async function evaluatePcPrimary() {
+    if (
+        !monitorPcPrimary ||
+        isPcPrimary ||
+        isShuttingDown
+    ) {
+        return;
+    }
+
+    const pcIsAlive =
+        await isPcPrimaryAlive();
+
+    if (pcIsAlive) {
+        if (client) {
+            await stopDiscordBot(
+                'PC版AutoDetectorが起動したため',
+            );
+        } else {
+            botState = 'standby';
+        }
+
+        return;
+    }
+
+    if (!client) {
+        await startDiscordBot(
+            'PC版AutoDetectorが停止しているため',
+        );
+    }
+}
+
+function startPcPrimaryMonitor() {
+    if (
+        !monitorPcPrimary ||
+        isPcPrimary ||
+        pcMonitorTimer
+    ) {
+        return;
+    }
+
+    console.log(
+        '[pc-monitor] ' +
+        'PC版AutoDetectorの監視を開始します。',
+    );
+
+    pcMonitorTimer =
+        setInterval(() => {
+            evaluatePcPrimary()
+                .catch((error) => {
+                    console.error(
+                        '[pc-monitor] ' +
+                        '監視エラー:',
+                        error,
+                    );
+                });
+        }, 5000);
+}
+
 async function syncSubRedisToMainRedis() {
     if (!syncSubToMainOnFailback) {
         return true;
@@ -457,6 +638,43 @@ async function startMainProcess() {
         console.log(`HTTP server listening on ${PORT}`);
     });
 
+    if (isPcPrimary) {
+        console.log(
+            '[pc-primary] ' +
+            'PC版として起動します。',
+        );
+
+        await startPcHeartbeat();
+
+        console.log(
+            '[pc-primary] ' +
+            'Render版の待機切り替えを待ちます。',
+        );
+
+        await sleep(
+            pcTakeoverDelayMs,
+        );
+
+        await startDiscordBot(
+            'PC版AutoDetectorとして起動',
+        );
+
+        return;
+    }
+
+    if (monitorPcPrimary) {
+        console.log(
+            '[pc-monitor] ' +
+            'Render待機版として起動します。',
+        );
+
+        await evaluatePcPrimary();
+
+        startPcPrimaryMonitor();
+
+        return;
+    }
+
     if (!isFailoverSub) {
         await startDiscordBot('通常起動');
         return;
@@ -479,6 +697,114 @@ async function startMainProcess() {
         });
     }, failoverCheckIntervalMs);
 }
+
+async function shutdownProcess(
+    signal,
+) {
+    if (isShuttingDown) {
+        return;
+    }
+
+    isShuttingDown = true;
+
+    console.log(
+        `終了処理を開始します: ${signal}`,
+    );
+
+    /*
+     * Render版のPC監視タイマーを停止する。
+     */
+    if (pcMonitorTimer) {
+        clearInterval(
+            pcMonitorTimer,
+        );
+
+        pcMonitorTimer = null;
+    }
+
+    /*
+     * PC版のハートビート更新タイマーを停止する。
+     */
+    if (pcHeartbeatTimer) {
+        clearInterval(
+            pcHeartbeatTimer,
+        );
+
+        pcHeartbeatTimer = null;
+    }
+
+    /*
+     * Discordへ接続中なら、
+     * Discordクライアントを停止する。
+     */
+    if (client) {
+        await stopDiscordBot(
+            `${signal}を受信したため`,
+        );
+    }
+
+    /*
+     * PC版の場合はRedis上の
+     * ハートビートを削除する。
+     *
+     * このキーが消えると、
+     * Render版がDiscordへ復帰する。
+     */
+    if (isPcPrimary) {
+        await stopPcHeartbeat();
+    }
+
+    /*
+     * Redisへの接続を正常終了する。
+     */
+    if (kv.isOpen) {
+        await kv.quit()
+            .catch((error) => {
+                console.error(
+                    'Key Value終了処理エラー:',
+                    error,
+                );
+            });
+    }
+
+    console.log(
+        'AutoDetectorの終了処理が完了しました。',
+    );
+
+    process.exit(0);
+}
+
+process.once(
+    'SIGINT',
+    () => {
+        shutdownProcess(
+            'SIGINT',
+        ).catch((error) => {
+            console.error(
+                'SIGINT終了処理エラー:',
+                error,
+            );
+
+            process.exit(1);
+        });
+    },
+);
+
+process.once(
+    'SIGTERM',
+    () => {
+        shutdownProcess(
+            'SIGTERM',
+        ).catch((error) => {
+            console.error(
+                'SIGTERM終了処理エラー:',
+                error,
+            );
+
+            process.exit(1);
+        });
+    },
+);
 
 startMainProcess().catch((error) => {
     console.error('起動時エラー:', error);
