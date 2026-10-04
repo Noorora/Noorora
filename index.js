@@ -218,13 +218,22 @@ async function startDiscordBot(reason = 'start requested') {
     botState = 'starting';
 
     if (DISABLE_DISCORD_LOGIN) {
-        console.log('Discord login is disabled by DISABLE_DISCORD_LOGIN=true');
+        console.log(
+            'Discord login is disabled by ' +
+            'DISABLE_DISCORD_LOGIN=true',
+        );
+
         botState = 'stopped';
+        isStarting = false;
+
         return;
     }
 
     try {
         client = createDiscordClient();
+
+        const activeClient =
+            client;
 
         context = {
             client,
@@ -278,7 +287,65 @@ async function startDiscordBot(reason = 'start requested') {
 
         client.on(
             Events.InteractionCreate,
-            (interaction) => handleInteractionCreate(interaction, context),
+            async (interaction) => {
+                /*
+                 * このDiscordクライアントがすでに
+                 * 停止対象になっている場合は処理しない。
+                 */
+                if (
+                    client !== activeClient ||
+                    isStopping
+                ) {
+                    return;
+                }
+
+                /*
+                 * Render版では、PC版が稼働中なら
+                 * Interactionへ応答しない。
+                 */
+                if (
+                    monitorPcPrimary &&
+                    !isPcPrimary
+                ) {
+                    const pcIsAlive =
+                        await isPcPrimaryAlive()
+                            .catch((error) => {
+                                console.error(
+                                    '[interaction-gate] ' +
+                                    'PC版確認エラー:',
+                                    error,
+                                );
+
+                                /*
+                                 * Redisの確認に失敗した場合も、
+                                 * 二重応答を避けるため処理しない。
+                                 */
+                                return true;
+                            });
+
+                    if (pcIsAlive) {
+                        console.log(
+                            '[interaction-gate] ' +
+                            'PC版が稼働中のため、' +
+                            'Interactionを無視します。',
+                        );
+
+                        return;
+                    }
+                }
+
+                const activeContext =
+                    context;
+
+                if (!activeContext) {
+                    return;
+                }
+
+                await handleInteractionCreate(
+                    interaction,
+                    activeContext,
+                );
+            },
         );
 
         client.on(
@@ -338,7 +405,9 @@ async function startDiscordBot(reason = 'start requested') {
     }
 }
 
-async function stopDiscordBot(reason = 'stop requested') {
+async function stopDiscordBot(
+    reason = 'stop requested',
+) {
     if (!client || isStopping) {
         return;
     }
@@ -346,19 +415,43 @@ async function stopDiscordBot(reason = 'stop requested') {
     isStopping = true;
     botState = 'stopping';
 
+    /*
+     * 処理中のクライアントをローカル変数へ退避する。
+     * グローバルのclientは先にnullへ変更し、
+     * 新しいInteraction処理へ使われないようにする。
+     */
+    const stoppingClient = client;
+
+    client = null;
+    context = null;
+
     try {
-        console.log(`Discord Bot を停止します: ${reason}`);
+        console.log(
+            `Discord Bot を停止します: ${reason}`,
+        );
 
-        client.destroy();
+        /*
+         * 新しいイベントが処理されないよう、
+         * 登録済みリスナーをすべて外す。
+         */
+        stoppingClient.removeAllListeners();
 
-        client = null;
-        context = null;
+        /*
+         * Discord Gateway接続を終了する。
+         */
+        await stoppingClient.destroy();
+
         botState = 'standby';
-    } catch (error) {
-        console.error('Discord Bot 停止エラー:', error);
 
-        client = null;
-        context = null;
+        console.log(
+            'Discord Bot の停止が完了しました。',
+        );
+    } catch (error) {
+        console.error(
+            'Discord Bot 停止エラー:',
+            error,
+        );
+
         botState = 'standby';
     } finally {
         isStopping = false;
