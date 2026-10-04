@@ -399,24 +399,7 @@ function sleep(milliseconds) {
     });
 }
 
-async function writePcHeartbeat() {
-    const heartbeatValue =
-        JSON.stringify({
-            instance: 'pc',
-            processId: process.pid,
-            updatedAt:
-                new Date().toISOString(),
-        });
-
-    await kv.set(
-        pcHeartbeatKey,
-        heartbeatValue,
-        {
-            EX:
-                pcHeartbeatTtlSeconds,
-        },
-    );
-}
+async function writePcHeartbeat() { const heartbeatValue = JSON.stringify({ instance: 'pc', processId: process.pid, updatedAt: new Date().toISOString(), }); await kv.set(pcHeartbeatKey, heartbeatValue, { EX: pcHeartbeatTtlSeconds, },); const remainingTtl = await kv.ttl(pcHeartbeatKey,); console.log(`[pc-primary] ` + `ハートビート更新成功。` + `key=${pcHeartbeatKey} / ` + `ttl=${remainingTtl}秒`,); }
 
 async function startPcHeartbeat() {
     if (pcHeartbeatTimer) {
@@ -484,6 +467,8 @@ async function evaluatePcPrimary() {
 
     const pcIsAlive =
         await isPcPrimaryAlive();
+
+    const remainingTtl = await kv.ttl(pcHeartbeatKey,); console.log(`[pc-monitor] ` + `PC版稼働状態=${pcIsAlive} / ` + `key=${pcHeartbeatKey} / ` + `ttl=${remainingTtl}秒`,);
 
     if (pcIsAlive) {
         if (client) {
