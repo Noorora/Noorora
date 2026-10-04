@@ -127,19 +127,83 @@ app.get('/', (req, res) => {
     res.send('Bot is running');
 });
 
-app.get('/health', (req, res) => {
-    if (isFailoverSub) {
-        res.status(200).send('ok');
-        return;
-    }
+app.get(
+    '/health',
+    async (req, res) => {
+        /*
+         * Subサービス自身は、
+         * Render上で稼働していれば正常とする。
+         */
+        if (isFailoverSub) {
+            res.status(200).send(
+                'ok: failover sub',
+            );
 
-    if (botState === 'running') {
-        res.status(200).send('ok');
-        return;
-    }
+            return;
+        }
 
-    res.status(503).send(`not ready: ${botState}`);
-});
+        /*
+         * PC版が稼働中の場合、
+         * MainのDiscord接続がstandbyでも
+         * Mainサービス自体は正常とする。
+         *
+         * これによりSubが起動するのを防ぐ。
+         */
+        if (
+            monitorPcPrimary &&
+            !isPcPrimary
+        ) {
+            try {
+                const pcIsAlive =
+                    await isPcPrimaryAlive();
+
+                if (pcIsAlive) {
+                    res.status(200).send(
+                        'ok: pc primary active',
+                    );
+
+                    return;
+                }
+            } catch (error) {
+                console.error(
+                    '[health] ' +
+                    'PC版確認エラー:',
+                    error,
+                );
+
+                res.status(503).send(
+                    'not ready: ' +
+                    'heartbeat check failed',
+                );
+
+                return;
+            }
+        }
+
+        /*
+         * MainがDiscordへ接続中、
+         * または接続完了している場合は正常。
+         */
+        if (
+            botState === 'starting' ||
+            botState === 'running'
+        ) {
+            res.status(200).send(
+                `ok: ${botState}`,
+            );
+
+            return;
+        }
+
+        /*
+         * PC版も停止していて、
+         * MainのDiscord接続も動作していない場合。
+         */
+        res.status(503).send(
+            `not ready: ${botState}`,
+        );
+    },
+);
 
 app.get('/status', (req, res) => {
     res.status(200).json({
