@@ -90,8 +90,13 @@ function isPublicComponentInteraction(
     const customId =
         interaction.customId || '';
 
-    return customId.startsWith(
-        'music_',
+    return (
+        customId.startsWith(
+            'music_',
+        ) ||
+        customId.startsWith(
+            'threads_',
+        )
     );
 }
 
