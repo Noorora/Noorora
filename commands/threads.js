@@ -18,6 +18,9 @@ const {
 
 const ALL_TAGS_VALUE = '__all_tags__';
 const NO_TAG_VALUE = '__no_tag__';
+const THREADS_PER_PAGE = 15;
+const THREAD_SEARCH_SESSION_TTL_MS = 10 * 60 * 1000;
+const threadSearchSessions = new Map();
 
 function buildThreadsMenuContent() {
     return [
@@ -65,7 +68,8 @@ function buildHelpContent() {
         '1. 検索するユーザーを決めます。',
         '2. 対象フォーラムを選びます。',
         '3. 対象タグを選びます。',
-        '4. 参加中・未参加のスレッドを一覧表示します。',
+        '4. 参加中・未参加・両方のいずれかを選びます。',
+        '5. 条件に一致したスレッドを一覧表示します。',
         '',
         '### 「参加中」の意味',
         'Discord上で、対象ユーザーがスレッドメンバーとして登録されている状態です。',
@@ -177,6 +181,44 @@ function buildTagSelectComponents(
                 )
                 .setPlaceholder('検索するタグを選択してください')
                 .addOptions(tagOptions)
+                .setMinValues(1)
+                .setMaxValues(1),
+        ),
+    ];
+}
+
+function buildMembershipSelectComponents(
+    userId,
+    forumId,
+    selectedTagId,
+) {
+    return [
+        new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId(
+                    `threads_select_membership:${userId}:${forumId}:${selectedTagId}`,
+                )
+                .setPlaceholder('表示する参加状態を選択してください')
+                .addOptions(
+                    {
+                        label: '参加中のスレッド',
+                        description: '対象ユーザーが参加しているスレッドだけを表示します',
+                        value: 'joined',
+                        emoji: '✅',
+                    },
+                    {
+                        label: '未参加のスレッド',
+                        description: '対象ユーザーが参加していないスレッドだけを表示します',
+                        value: 'not_joined',
+                        emoji: '➖',
+                    },
+                    {
+                        label: '参加中と未参加の両方',
+                        description: '両方の一覧をまとめて表示します',
+                        value: 'both',
+                        emoji: '📋',
+                    },
+                )
                 .setMinValues(1)
                 .setMaxValues(1),
         ),
@@ -524,6 +566,7 @@ function buildResultLines(
     targetUser,
     forum_channel,
     selectedTagId,
+    membershipFilter,
     result,
 ) {
     const selectedTagLabel =
@@ -538,45 +581,68 @@ function buildResultLines(
         `対象ユーザー: <@${targetUser.id}>`,
         `対象フォーラム: <#${forum_channel.id}>`,
         `対象タグ: **${selectedTagLabel}**`,
-        '',
-        `## 参加中のスレッド (${result.joined.length}件)`,
+        `表示対象: **${
+            membershipFilter === 'joined'
+                ? '参加中のみ'
+                : membershipFilter === 'not_joined'
+                    ? '未参加のみ'
+                    : '参加中と未参加の両方'
+        }**`,
         '',
     ];
 
-    if (result.joined.length === 0) {
+    if (
+        membershipFilter === 'joined' ||
+        membershipFilter === 'both'
+    ) {
         lines.push(
-            '該当するスレッドはありません。',
+            `## 参加中のスレッド (${result.joined.length}件)`,
             '',
         );
-    } else {
-        lines.push(
-            ...buildThreadLines(
-                forum_channel,
-                result.joined,
-            ),
-        );
+
+        if (result.joined.length === 0) {
+            lines.push(
+                '該当するスレッドはありません。',
+                '',
+            );
+        } else {
+            lines.push(
+                ...buildThreadLines(
+                    forum_channel,
+                    result.joined,
+                ),
+            );
+        }
     }
 
-    lines.push(
-        `## 未参加のスレッド (${result.notJoined.length}件)`,
-        '',
-    );
-
-    if (result.notJoined.length === 0) {
+    if (
+        membershipFilter === 'not_joined' ||
+        membershipFilter === 'both'
+    ) {
         lines.push(
-            '該当するスレッドはありません。',
+            `## 未参加のスレッド (${result.notJoined.length}件)`,
             '',
         );
-    } else {
-        lines.push(
-            ...buildThreadLines(
-                forum_channel,
-                result.notJoined,
-            ),
-        );
+
+        if (result.notJoined.length === 0) {
+            lines.push(
+                '該当するスレッドはありません。',
+                '',
+            );
+        } else {
+            lines.push(
+                ...buildThreadLines(
+                    forum_channel,
+                    result.notJoined,
+                ),
+            );
+        }
     }
 
-    if (result.unknown.length > 0) {
+    if (
+        membershipFilter === 'both' &&
+        result.unknown.length > 0
+    ) {
         lines.push(
             `## 判定できなかったスレッド (${result.unknown.length}件)`,
             '',
@@ -594,88 +660,253 @@ function buildResultLines(
     return lines;
 }
 
+function cleanupExpiredThreadSearchSessions() {
+    const now = Date.now();
+
+    for (const [sessionId, session] of threadSearchSessions) {
+        if (now - session.createdAt > THREAD_SEARCH_SESSION_TTL_MS) {
+            threadSearchSessions.delete(sessionId);
+        }
+    }
+}
+
+function createThreadSearchSession(data) {
+    cleanupExpiredThreadSearchSessions();
+
+    const sessionId = crypto
+        .randomBytes(6)
+        .toString('hex');
+
+    threadSearchSessions.set(sessionId, {
+        ...data,
+        createdAt: Date.now(),
+    });
+
+    return sessionId;
+}
+
+function buildPaginationComponents(sessionId, page, totalPages) {
+    if (totalPages <= 1) {
+        return [];
+    }
+
+    return [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`threads_page:${sessionId}:${page - 1}`)
+                .setLabel('前の15件')
+                .setEmoji('◀️')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(page <= 0),
+            new ButtonBuilder()
+                .setCustomId(`threads_page:${sessionId}:${page + 1}`)
+                .setLabel('次の15件')
+                .setEmoji('▶️')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(page >= totalPages - 1),
+        ),
+    ];
+}
+
+function buildPagedResultLines(session, page, totalPages, pageItems) {
+    const displayTarget =
+        session.membershipFilter === 'joined'
+            ? '参加中のスレッド'
+            : session.membershipFilter === 'not_joined'
+                ? '未参加のスレッド'
+                : '参加中と未参加の両方';
+
+    const lines = [
+        '# スレッド参加状況検索結果',
+        '',
+        `対象ユーザー: <@${session.targetUserId}>`,
+        `対象フォーラム: <#${session.forumId}>`,
+        `対象タグ: **${session.selectedTagLabel}**`,
+        `表示対象: **${displayTarget}**`,
+        `ページ: **${page + 1} / ${totalPages}**`,
+        `該当件数: **${session.items.length}件**`,
+        '',
+    ];
+
+    if (pageItems.length === 0) {
+        lines.push('該当するスレッドはありません。');
+        return lines;
+    }
+
+    const firstItemNumber = page * THREADS_PER_PAGE + 1;
+
+    pageItems.forEach((item, index) => {
+        lines.push(
+            `${firstItemNumber + index}. **${item.thread.name}**`,
+            `   参加状態: ${item.membership === 'joined' ? '参加中' : '未参加'}`,
+            `   タグ: ${item.tagNames}`,
+            `   状態: ${item.thread.archived ? 'アーカイブ済み' : 'アクティブ'}`,
+            `   リンク: ${buildThreadUrl(item.thread)}`,
+            '',
+        );
+    });
+
+    lines.push(
+        '※ 1ページにつき15件表示します。',
+        '※ 「参加中」は、対象ユーザーがスレッドメンバーとして登録されている状態です。',
+    );
+
+    return lines;
+}
+
+async function renderThreadSearchPage(interaction, sessionId, requestedPage) {
+    cleanupExpiredThreadSearchSessions();
+
+    const session = threadSearchSessions.get(sessionId);
+
+    if (!session) {
+        await interaction.editReply({
+            content: '検索結果の有効期限が切れました。もう一度 /threads から検索してください。',
+            components: [],
+        });
+        return;
+    }
+
+    if (session.requesterId !== interaction.user.id) {
+        await interaction.followUp(
+            ephemeralOptions({
+                content: 'このページ切り替えボタンは、検索を実行した本人だけが使用できます。',
+            }),
+        );
+        return;
+    }
+
+    const totalPages = Math.max(
+        1,
+        Math.ceil(session.items.length / THREADS_PER_PAGE),
+    );
+
+    const page = Math.min(
+        Math.max(Number(requestedPage) || 0, 0),
+        totalPages - 1,
+    );
+
+    const start = page * THREADS_PER_PAGE;
+    const pageItems = session.items.slice(
+        start,
+        start + THREADS_PER_PAGE,
+    );
+
+    await interaction.editReply({
+        content: buildPagedResultLines(
+            session,
+            page,
+            totalPages,
+            pageItems,
+        ).join('\n'),
+        components: buildPaginationComponents(
+            sessionId,
+            page,
+            totalPages,
+        ),
+    });
+}
+
 async function sendThreadSearchResult(
     interaction,
     userId,
     forumId,
     selectedTagId,
+    membershipFilter,
 ) {
-    const forum_channel =
-        await interaction.guild.channels
-            .fetch(forumId)
-            .catch(() => null);
+    const forum_channel = await interaction.guild.channels
+        .fetch(forumId)
+        .catch(() => null);
 
     if (
         !forum_channel ||
         (
-            forum_channel.type !==
-            ChannelType.GuildForum &&
-            forum_channel.type !==
-            ChannelType.GuildMedia
+            forum_channel.type !== ChannelType.GuildForum &&
+            forum_channel.type !== ChannelType.GuildMedia
         )
     ) {
         await interaction.editReply({
-            content:
-                '対象フォーラムが見つからないか、フォーラムではありません。',
+            content: '対象フォーラムが見つからないか、フォーラムではありません。',
             components: [],
         });
-
         return;
     }
 
-    const targetUser =
-        await interaction.client.users
-            .fetch(userId)
-            .catch(() => null);
+    const targetUser = await interaction.client.users
+        .fetch(userId)
+        .catch(() => null);
 
     if (!targetUser) {
         await interaction.editReply({
-            content:
-                '対象ユーザーが見つかりませんでした。',
+            content: '対象ユーザーが見つかりませんでした。',
             components: [],
         });
-
         return;
     }
 
-    const threads =
-        await collectForumThreads(
-            forum_channel,
-            selectedTagId,
-        );
-
-    const result =
-        await classifyThreads(
-            threads,
-            userId,
-        );
-
-    const chunks = splitLinesToMessages(
-        '',
-        buildResultLines(
-            targetUser,
-            forum_channel,
-            selectedTagId,
-            result,
-        ),
+    const threads = await collectForumThreads(
+        forum_channel,
+        selectedTagId,
     );
 
-    await interaction.editReply({
-        content: chunks[0],
-        components: [],
+    const result = await classifyThreads(
+        threads,
+        userId,
+    );
+
+    let selectedItems = [];
+
+    if (membershipFilter === 'joined') {
+        selectedItems = result.joined.map((thread) => ({
+            thread,
+            membership: 'joined',
+        }));
+    } else if (membershipFilter === 'not_joined') {
+        selectedItems = result.notJoined.map((thread) => ({
+            thread,
+            membership: 'not_joined',
+        }));
+    } else {
+        const joinedIds = new Set(
+            result.joined.map((thread) => thread.id),
+        );
+
+        selectedItems = sortThreadsNewestFirst([
+            ...result.joined,
+            ...result.notJoined,
+        ]).map((thread) => ({
+            thread,
+            membership: joinedIds.has(thread.id)
+                ? 'joined'
+                : 'not_joined',
+        }));
+    }
+
+    selectedItems = selectedItems.map((item) => ({
+        ...item,
+        tagNames: getThreadTagNames(
+            forum_channel,
+            item.thread,
+        ),
+    }));
+
+    const sessionId = createThreadSearchSession({
+        requesterId: interaction.user.id,
+        targetUserId: targetUser.id,
+        forumId: forum_channel.id,
+        selectedTagLabel: getSelectedTagLabel(
+            forum_channel,
+            selectedTagId,
+        ),
+        membershipFilter,
+        items: selectedItems,
     });
 
-    for (
-        let index = 1;
-        index < chunks.length;
-        index++
-    ) {
-        await interaction.followUp(
-            ephemeralOptions({
-                content: chunks[index],
-            }),
-        );
-    }
+    await renderThreadSearchPage(
+        interaction,
+        sessionId,
+        0,
+    );
 }
 
 async function execute(interaction) {
@@ -700,6 +931,28 @@ async function handleComponent(
     }
 
     if (interaction.isButton()) {
+        if (
+            customId.startsWith(
+                'threads_page:',
+            )
+        ) {
+            const [
+                ,
+                sessionId,
+                pageRaw,
+            ] = customId.split(':');
+
+            await interaction.deferUpdate();
+
+            await renderThreadSearchPage(
+                interaction,
+                sessionId,
+                Number(pageRaw),
+            );
+
+            return true;
+        }
+
         if (
             customId ===
             'threads_search_self'
@@ -830,6 +1083,37 @@ async function handleComponent(
 
             await interaction.update({
                 content:
+                    `対象ユーザー: <@${userId}>\n` +
+                    `対象フォーラム: <#${forumId}>\n` +
+                    '表示する参加状態を選択してください。',
+                components:
+                    buildMembershipSelectComponents(
+                        userId,
+                        forumId,
+                        selectedTagId,
+                    ),
+            });
+
+            return true;
+        }
+
+        if (
+            customId.startsWith(
+                'threads_select_membership:',
+            )
+        ) {
+            const [
+                ,
+                userId,
+                forumId,
+                selectedTagId,
+            ] = customId.split(':');
+
+            const membershipFilter =
+                interaction.values[0];
+
+            await interaction.update({
+                content:
                     'スレッド参加状況を検索しています。',
                 components: [],
             });
@@ -840,6 +1124,7 @@ async function handleComponent(
                     userId,
                     forumId,
                     selectedTagId,
+                    membershipFilter,
                 );
             } catch (error) {
                 console.error(
