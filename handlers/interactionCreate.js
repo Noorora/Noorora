@@ -112,6 +112,7 @@ async function handleInteractionCreate(interaction, context) {
     if (
         interaction.isButton() ||
         interaction.isModalSubmit() ||
+        interaction.isStringSelectMenu() ||
         interaction.isChannelSelectMenu() ||
         interaction.isRoleSelectMenu() ||
         interaction.isUserSelectMenu()
