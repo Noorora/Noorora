@@ -112,6 +112,18 @@ const commands = [
         .toJSON(),
 
     new SlashCommandBuilder()
+        .setName('joined')
+        .setDescription('自分がこのサーバーに参加してからの日数を表示します')
+        .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('threads')
+        .setDescription(
+            '参加中と未参加のスレッド一覧を表示します',
+        )
+        .toJSON(),
+
+    new SlashCommandBuilder()
         .setName('music')
         .setDescription(
             '音楽再生メニューを表示します',
@@ -121,11 +133,6 @@ const commands = [
     new SlashCommandBuilder()
         .setName('hasrole')
         .setDescription('ロール所持者確認メニューを表示します')
-        .toJSON(),
-
-    new SlashCommandBuilder()
-        .setName('joined')
-        .setDescription('自分がこのサーバーに参加してからの日数を表示します')
         .toJSON(),
 ];
 

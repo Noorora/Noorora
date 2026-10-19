@@ -19,6 +19,7 @@ const commandModules = [
     require('../commands/joined'),
     require('../commands/pins'),
     require('../commands/say'),
+    require('../commands/threads'),
     require('../commands/music'),//サーバーの容量を食いすぎるので封印
 ];
 
@@ -29,6 +30,7 @@ const commands = new Map(
 const publicCommandNames = new Set([
     'help',
     'joined',
+    'threads',
     'music',
 ]);
 
