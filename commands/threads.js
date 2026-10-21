@@ -738,13 +738,27 @@ function buildPagedResultLines(session, page, totalPages, pageItems) {
     const firstItemNumber = page * THREADS_PER_PAGE + 1;
 
     pageItems.forEach((item, index) => {
+        const membershipLabel =
+            item.membership === 'joined'
+                ? '参加中'
+                : '未参加';
+
+        const stateLabel =
+            item.thread.archived
+                ? 'アーカイブ済み'
+                : 'アクティブ';
+
+        const tagLabel =
+            item.tagNames.length > 60
+                ? `${item.tagNames.slice(0, 57)}...`
+                : item.tagNames;
+
         lines.push(
-            `${firstItemNumber + index}. **${item.thread.name}**`,
-            `   参加状態: ${item.membership === 'joined' ? '参加中' : '未参加'}`,
-            `   タグ: ${item.tagNames}`,
-            `   状態: ${item.thread.archived ? 'アーカイブ済み' : 'アクティブ'}`,
-            `   リンク: ${buildThreadUrl(item.thread)}`,
-            '',
+            `${firstItemNumber + index}. ` +
+            `<#${item.thread.id}>` +
+            `｜${membershipLabel}` +
+            `｜${tagLabel}` +
+            `｜${stateLabel}`,
         );
     });
 
@@ -753,7 +767,24 @@ function buildPagedResultLines(session, page, totalPages, pageItems) {
         '※ 「参加中」は、対象ユーザーがスレッドメンバーとして登録されている状態です。',
     );
 
-    return lines;
+    const content =
+        lines.join('\n');
+
+    if (content.length <= 2000) {
+        return lines;
+    }
+
+    console.warn(
+        '[threads] ' +
+        `ページ本文が2000文字を超えました。` +
+        `length=${content.length}`,
+    );
+
+    return [
+        ...lines.slice(0, 10),
+        '',
+        '表示内容が長いため、このページは一部のみ表示しています。',
+    ];
 }
 
 async function renderThreadSearchPage(interaction, sessionId, requestedPage) {
