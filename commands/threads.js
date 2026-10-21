@@ -710,11 +710,17 @@ function buildPaginationComponents(sessionId, page, totalPages) {
     ];
 }
 
-function buildPagedResultLines(session, page, totalPages, pageItems) {
+function buildPagedResultLines(
+    session,
+    page,
+    totalPages,
+    pageItems,
+) {
     const displayTarget =
         session.membershipFilter === 'joined'
             ? '参加中のスレッド'
-            : session.membershipFilter === 'not_joined'
+            : session.membershipFilter ===
+                'not_joined'
                 ? '未参加のスレッド'
                 : '参加中と未参加の両方';
 
@@ -731,11 +737,15 @@ function buildPagedResultLines(session, page, totalPages, pageItems) {
     ];
 
     if (pageItems.length === 0) {
-        lines.push('該当するスレッドはありません。');
+        lines.push(
+            '該当するスレッドはありません。',
+        );
+
         return lines;
     }
 
-    const firstItemNumber = page * THREADS_PER_PAGE + 1;
+    const firstItemNumber =
+        page * THREADS_PER_PAGE + 1;
 
     pageItems.forEach((item, index) => {
         const membershipLabel =
@@ -749,10 +759,16 @@ function buildPagedResultLines(session, page, totalPages, pageItems) {
                 : 'アクティブ';
 
         const tagLabel =
-            item.tagNames.length > 60
-                ? `${item.tagNames.slice(0, 57)}...`
+            item.tagNames.length > 40
+                ? `${item.tagNames.slice(0, 37)}...`
                 : item.tagNames;
 
+        /*
+         * <#スレッドID>はDiscord上で
+         * スレッド名とリンクとして表示される。
+         *
+         * 長いURLは本文へ入れない。
+         */
         lines.push(
             `${firstItemNumber + index}. ` +
             `<#${item.thread.id}>` +
@@ -763,28 +779,42 @@ function buildPagedResultLines(session, page, totalPages, pageItems) {
     });
 
     lines.push(
+        '',
         '※ 1ページにつき15件表示します。',
-        '※ 「参加中」は、対象ユーザーがスレッドメンバーとして登録されている状態です。',
     );
 
     const content =
         lines.join('\n');
 
-    if (content.length <= 2000) {
-        return lines;
+    /*
+     * 念のため、Discordの2000文字上限を
+     * 超えないようにする。
+     */
+    if (content.length > 2000) {
+        console.warn(
+            '[threads] ' +
+            'ページ本文が2000文字を超えました。' +
+            `length=${content.length}`,
+        );
+
+        while (
+            lines.join('\n').length >
+                1950 &&
+            lines.length > 10
+        ) {
+            lines.splice(
+                lines.length - 2,
+                1,
+            );
+        }
+
+        lines.push(
+            '表示可能な文字数を超えたため、' +
+            'このページの一部を省略しました。',
+        );
     }
 
-    console.warn(
-        '[threads] ' +
-        `ページ本文が2000文字を超えました。` +
-        `length=${content.length}`,
-    );
-
-    return [
-        ...lines.slice(0, 10),
-        '',
-        '表示内容が長いため、このページは一部のみ表示しています。',
-    ];
+    return lines;
 }
 
 async function renderThreadSearchPage(interaction, sessionId, requestedPage) {
