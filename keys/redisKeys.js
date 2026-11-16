@@ -83,4 +83,5 @@ module.exports = {
     forwardExcludeChannelsKey,
     botAdminRoleKey,
     botOptionAuditLogKey,
+    managementSessionKey,
 };
