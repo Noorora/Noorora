@@ -279,38 +279,38 @@ const desktopRequestId =
                 const discordClient =
                     getDiscordClient();
 
-                /*
-                 * ユーザーが管理でき、
-                 * なおかつAutoDetectorが
-                 * 導入されているGuildだけを返す。
-                 */
-                const manageableGuilds =
-                    guilds
-                        .filter(
-                            isGuildManager,
-                        )
-                        .filter(
-                            (guild) =>
-                                Boolean(
-                                    discordClient
-                                        ?.guilds
-                                        ?.cache
-                                        ?.has(
-                                            guild.id,
-                                        ),
-                                ),
-                        )
-                        .map(
-                            (guild) => ({
-                                id: guild.id,
-                                name:
-                                    guild.name,
-                                icon:
-                                    guild.icon,
-                                owner:
-                                    guild.owner,
-                            }),
-                        );
+                const availableGuilds =
+    guilds
+        /*
+         * ログインユーザーが参加していて、
+         * AutoDetectorも参加しているGuildを表示する。
+         *
+         * サーバー管理権限は要求しない。
+         */
+        .filter(
+            (guild) =>
+                Boolean(
+                    discordClient
+                        ?.guilds
+                        ?.cache
+                        ?.has(
+                            guild.id,
+                        ),
+                ),
+        )
+        .map(
+            (guild) => ({
+                id:
+                    guild.id,
+                name:
+                    guild.name,
+                icon:
+                    guild.icon,
+                owner:
+                    guild.owner,
+            }),
+        );
+
 
                         const {
     loginId,
@@ -631,7 +631,7 @@ router.get(
             const discordClient =
                 getDiscordClient();
 
-            const manageableGuilds =
+            const availableGuilds =
                 guilds
                     .filter(
                         isGuildManager,
@@ -666,10 +666,10 @@ router.get(
             );
 
             res.status(200).json({
-                ok: true,
-                guilds:
-                    manageableGuilds,
-            });
+    ok: true,
+    guilds:
+        availableGuilds,
+});
         } catch (error) {
             console.error(
                 '[management-api] ' +
@@ -890,18 +890,15 @@ router.post(
                         item.id === guildId,
                 );
 
-            if (
-                !guild ||
-                !isGuildManager(guild)
-            ) {
-                res.status(403).json({
-                    ok: false,
-                    error:
-                        'guild_permission_denied',
-                });
+            if (!guild) {
+    res.status(403).json({
+        ok: false,
+        error:
+            'guild_membership_required',
+    });
 
-                return;
-            }
+    return;
+}
 
             /*
              * AutoDetector自身が対象Guildに
