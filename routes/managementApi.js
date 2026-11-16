@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 
 const {
     createManagementSession,
@@ -18,6 +19,17 @@ const {
 const oauthStates = new Map();
 
 /*
+ * Windowsアプリの認証待機情報。
+ *
+ * requestId:
+ * Windowsアプリが認証結果を受け取るための識別子。
+ */
+const desktopLoginRequests = new Map();
+
+const DESKTOP_LOGIN_TTL_MS =
+    10 * 60 * 1000;
+
+/*
  * OAuth stateを長時間残さないための有効期限。
  * 10分。
  */
@@ -27,12 +39,38 @@ const OAUTH_STATE_TTL_MS =
 function cleanupExpiredStates() {
     const now = Date.now();
 
-    for (const [state, createdAt] of oauthStates) {
+    for (
+        const [
+            state,
+            stateData,
+        ] of oauthStates
+    ) {
+        const createdAt =
+            typeof stateData === 'number'
+                ? stateData
+                : stateData.createdAt;
+
         if (
             now - createdAt >
             OAUTH_STATE_TTL_MS
         ) {
             oauthStates.delete(state);
+        }
+    }
+
+    for (
+        const [
+            requestId,
+            request,
+        ] of desktopLoginRequests
+    ) {
+        if (
+            now - request.createdAt >
+            DESKTOP_LOGIN_TTL_MS
+        ) {
+            desktopLoginRequests.delete(
+                requestId,
+            );
         }
     }
 }
@@ -105,9 +143,12 @@ function createManagementRouter({
                 createOAuthState();
 
             oauthStates.set(
-                state,
-                Date.now(),
-            );
+    state,
+    {
+        createdAt: Date.now(),
+        requestId: null,
+    },
+);
 
             const authorizationUrl =
                 createDiscordAuthorizationUrl(
@@ -149,23 +190,30 @@ function createManagementRouter({
             }
 
             if (
-                typeof state !==
-                    'string' ||
-                !oauthStates.has(state)
-            ) {
-                res.status(400).json({
-                    ok: false,
-                    error:
-                        'invalid_oauth_state',
-                });
+    typeof state !== 'string' ||
+    !oauthStates.has(state)
+) {
+    res.status(400).json({
+        ok: false,
+        error:
+            'invalid_oauth_state',
+    });
 
-                return;
-            }
+    return;
+}
 
-            /*
-             * stateは一回だけ使用可能。
-             */
-            oauthStates.delete(state);
+const stateData =
+    oauthStates.get(state);
+
+/*
+ * stateは一回だけ使用可能。
+ */
+oauthStates.delete(state);
+
+const desktopRequestId =
+    typeof stateData === 'object'
+        ? stateData.requestId
+        : null;
 
             if (
                 typeof code !==
@@ -246,7 +294,91 @@ function createManagementRouter({
             tokens.access_token,
     },
 );
-                res.status(200).json({
+
+/*
+ * ↓ STEP 14はここから
+ */
+if (desktopRequestId) {
+    const desktopRequest =
+        desktopLoginRequests.get(
+            desktopRequestId,
+        );
+
+    if (desktopRequest) {
+        desktopLoginRequests.set(
+            desktopRequestId,
+            {
+                ...desktopRequest,
+                status: 'completed',
+                loginId,
+                expiresIn,
+
+                user: {
+                    id: user.id,
+                    username:
+                        user.username,
+                    globalName:
+                        user.global_name ||
+                        null,
+                    avatar:
+                        user.avatar ||
+                        null,
+                },
+
+                guilds:
+                    manageableGuilds,
+            },
+        );
+
+        res.status(200).send(`
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <title>AutoDetector</title>
+</head>
+<body style="
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: #0f1115;
+    color: #ffffff;
+    font-family: 'Segoe UI', sans-serif;
+">
+    <main style="
+        width: min(460px, calc(100% - 40px));
+        box-sizing: border-box;
+        padding: 40px;
+        text-align: center;
+        background: #171a21;
+        border: 1px solid #292e38;
+        border-radius: 12px;
+    ">
+        <h1 style="margin-top: 0;">
+            認証が完了しました
+        </h1>
+
+        <p style="
+            color: #aab0bc;
+            line-height: 1.7;
+        ">
+            AutoDetectorアプリへ戻ってください。
+            このブラウザ画面は閉じて構いません。
+        </p>
+    </main>
+</body>
+</html>
+        `);
+
+        return;
+    }
+}
+/*
+ * ↑ STEP 14はここまで
+ */
+
+res.status(200).json({
     ok: true,
 
     user: {
@@ -266,9 +398,40 @@ function createManagementRouter({
     loginId,
     expiresIn,
 });
+        } catch (error) {
+            console.error(
+                '[management-api] ' +
+                'Discord OAuth error:',
+                error,
+            );
+
+            if (desktopRequestId) {
+                const desktopRequest =
+                    desktopLoginRequests.get(
+                        desktopRequestId,
+                    );
+
+                if (desktopRequest) {
+                    desktopLoginRequests.set(
+                        desktopRequestId,
+                        {
+                            ...desktopRequest,
+                            status: 'failed',
+                            error:
+                                'discord_oauth_failed',
+                        },
+                    );
+                }
             }
-        },
-    );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'discord_oauth_failed',
+            });
+        }
+    },
+);
 
     /*
  * Windowsアプリからログイン状態を確認する。
@@ -491,6 +654,142 @@ router.get(
                     'guild_fetch_failed',
             });
         }
+    },
+);
+
+/*
+ * Windowsアプリ用のOAuth認証開始。
+ *
+ * WindowsアプリはこのAPIから
+ * requestIdとauthorizationUrlを受け取る。
+ */
+router.post(
+    '/desktop-auth/start',
+    (req, res) => {
+        try {
+            cleanupExpiredStates();
+
+            const requestId =
+                crypto
+                    .randomBytes(32)
+                    .toString('hex');
+
+            const state =
+                createOAuthState();
+
+            const createdAt =
+                Date.now();
+
+            desktopLoginRequests.set(
+                requestId,
+                {
+                    createdAt,
+                    status: 'pending',
+                    loginId: null,
+                    expiresIn: null,
+                    user: null,
+                    guilds: null,
+                },
+            );
+
+            oauthStates.set(
+                state,
+                {
+                    createdAt,
+                    requestId,
+                },
+            );
+
+            const authorizationUrl =
+                createDiscordAuthorizationUrl(
+                    state,
+                );
+
+            res.status(200).json({
+                ok: true,
+                requestId,
+                authorizationUrl,
+                expiresIn:
+                    DESKTOP_LOGIN_TTL_MS /
+                    1000,
+            });
+        } catch (error) {
+            console.error(
+                '[management-api] ' +
+                'desktop auth start error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'desktop_auth_start_failed',
+            });
+        }
+    },
+);
+
+/*
+ * WindowsアプリがOAuth結果を確認する。
+ */
+router.get(
+    '/desktop-auth/result/:requestId',
+    (req, res) => {
+        cleanupExpiredStates();
+
+        const {
+            requestId,
+        } = req.params;
+
+        const request =
+            desktopLoginRequests.get(
+                requestId,
+            );
+
+        if (!request) {
+            res.status(404).json({
+                ok: false,
+                error:
+                    'login_request_not_found',
+            });
+
+            return;
+        }
+
+        if (
+            request.status !==
+            'completed'
+        ) {
+            res.status(200).json({
+                ok: true,
+                status:
+                    'pending',
+            });
+
+            return;
+        }
+
+        /*
+         * loginIdは一度だけ返す。
+         * 取得後は認証要求自体を削除する。
+         */
+        desktopLoginRequests.delete(
+            requestId,
+        );
+
+        res.status(200).json({
+            ok: true,
+            status:
+                'completed',
+            loginId:
+                request.loginId,
+            expiresIn:
+                request.expiresIn,
+            user:
+                request.user,
+            guilds:
+                request.guilds,
+        });
     },
 );
     return router;
