@@ -632,33 +632,36 @@ router.get(
                 getDiscordClient();
 
             const availableGuilds =
-                guilds
-                    .filter(
-                        isGuildManager,
-                    )
-                    .filter(
-                        (guild) =>
-                            Boolean(
-                                discordClient
-                                    ?.guilds
-                                    ?.cache
-                                    ?.has(
-                                        guild.id,
-                                    ),
-                            ),
-                    )
-                    .map(
-                        (guild) => ({
-                            id:
-                                guild.id,
-                            name:
-                                guild.name,
-                            icon:
-                                guild.icon,
-                            owner:
-                                guild.owner,
-                        }),
-                    );
+    guilds
+        /*
+         * ログインユーザーが参加していて、
+         * AutoDetectorも参加しているGuildを表示する。
+         *
+         * サーバー管理権限は要求しない。
+         */
+        .filter(
+            (guild) =>
+                Boolean(
+                    discordClient
+                        ?.guilds
+                        ?.cache
+                        ?.has(
+                            guild.id,
+                        ),
+                ),
+        )
+        .map(
+            (guild) => ({
+                id:
+                    guild.id,
+                name:
+                    guild.name,
+                icon:
+                    guild.icon,
+                owner:
+                    guild.owner,
+            }),
+        );
 
             await refreshManagementSession(
                 kv,
