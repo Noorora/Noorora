@@ -23,6 +23,13 @@ const {
     unregisterMusicWorker,
 } = require('../services/musicWorkerService');
 
+const {
+    createMusicJob,
+    takeNextMusicJob,
+    updateMusicJobStatus,
+    getMusicJob,
+} = require('../services/musicJobService');
+
 const oauthStates = new Map();
 
 /*
@@ -1171,6 +1178,459 @@ router.delete(
                 ok: false,
                 error:
                     'worker_unregister_failed',
+            });
+        }
+    },
+);
+
+/*
+ * Workerが次の再生ジョブを取得する。
+ *
+ * ジョブが無い場合も正常なため、
+ * HTTP 204ではなくJSONで待機状態を返す。
+ */
+router.get(
+    '/music-workers/:workerId/jobs/next',
+    async (req, res) => {
+        try {
+            const loginId =
+                getBearerToken(req);
+
+            if (!loginId) {
+                res.status(401).json({
+                    ok: false,
+                    error: 'missing_session',
+                });
+
+                return;
+            }
+
+            const session =
+                await getManagementSession(
+                    kv,
+                    loginId,
+                );
+
+            if (!session) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'invalid_or_expired_session',
+                });
+
+                return;
+            }
+
+            const {
+                workerId,
+            } = req.params;
+
+            const worker =
+                await getMusicWorker(
+                    kv,
+                    workerId,
+                );
+
+            if (!worker) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'worker_not_found',
+                });
+
+                return;
+            }
+
+            /*
+             * Worker登録者以外には
+             * ジョブを渡さない。
+             */
+            if (
+                worker.userId !==
+                session.userId
+            ) {
+                res.status(403).json({
+                    ok: false,
+                    error:
+                        'worker_owner_mismatch',
+                });
+
+                return;
+            }
+
+            const job =
+                await takeNextMusicJob(
+                    kv,
+                    workerId,
+                );
+
+            await refreshManagementSession(
+                kv,
+                loginId,
+            );
+
+            if (!job) {
+                res.status(200).json({
+                    ok: true,
+                    status: 'waiting',
+                    job: null,
+                });
+
+                return;
+            }
+
+            res.status(200).json({
+                ok: true,
+                status: 'assigned',
+
+                job: {
+                    jobId:
+                        job.jobId,
+                    type:
+                        job.type,
+                    guildId:
+                        job.guildId,
+                    voiceChannelId:
+                        job.voiceChannelId,
+                    textChannelId:
+                        job.textChannelId,
+                    requestedById:
+                        job.requestedById,
+                    url:
+                        job.url,
+                },
+            });
+        } catch (error) {
+            console.error(
+                '[management-api] ' +
+                'music job next error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'music_job_receive_failed',
+            });
+        }
+    },
+);
+/*
+ * Workerがジョブの進行状態を報告する。
+ */
+router.post(
+    '/music-jobs/:jobId/status',
+    async (req, res) => {
+        try {
+            const loginId =
+                getBearerToken(req);
+
+            if (!loginId) {
+                res.status(401).json({
+                    ok: false,
+                    error: 'missing_session',
+                });
+
+                return;
+            }
+
+            const session =
+                await getManagementSession(
+                    kv,
+                    loginId,
+                );
+
+            if (!session) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'invalid_or_expired_session',
+                });
+
+                return;
+            }
+
+            const {
+                jobId,
+            } = req.params;
+
+            const {
+                status,
+                detail,
+            } = req.body || {};
+
+            const allowedStatuses =
+                new Set([
+                    'received',
+                    'preparing',
+                    'playing',
+                    'completed',
+                    'failed',
+                    'cancelled',
+                ]);
+
+            if (
+                typeof status !== 'string' ||
+                !allowedStatuses.has(status)
+            ) {
+                res.status(400).json({
+                    ok: false,
+                    error:
+                        'invalid_job_status',
+                });
+
+                return;
+            }
+
+            const currentJob =
+    await getMusicJob(
+        kv,
+        jobId,
+    );
+
+if (!currentJob) {
+    res.status(404).json({
+        ok: false,
+        error:
+            'music_job_not_found',
+    });
+
+    return;
+}
+
+const worker =
+    await getMusicWorker(
+        kv,
+        currentJob.workerId,
+    );
+
+if (
+    !worker ||
+    worker.userId !==
+        session.userId
+) {
+    res.status(403).json({
+        ok: false,
+        error:
+            'music_job_owner_mismatch',
+    });
+
+    return;
+}
+
+            const updatedJob =
+                await updateMusicJobStatus(
+                    kv,
+                    jobId,
+                    status,
+                    typeof detail === 'string'
+                        ? detail.slice(0, 500)
+                        : null,
+                );
+
+            if (!updatedJob) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'music_job_not_found',
+                });
+
+                return;
+            }
+
+            /*
+             * ジョブを担当するWorkerの
+             * 所有者だけが状態を変更できる。
+             */
+            
+            res.status(200).json({
+                ok: true,
+
+                job: {
+                    jobId:
+                        updatedJob.jobId,
+                    status:
+                        updatedJob.status,
+                    detail:
+                        updatedJob.detail,
+                },
+            });
+        } catch (error) {
+            console.error(
+                '[management-api] ' +
+                'music job status error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'music_job_status_failed',
+            });
+        }
+    },
+);
+
+/*
+ * 開発用:
+ * 自分のWorkerへテストジョブを作成する。
+ *
+ * 本番の/music接続後は削除する。
+ */
+router.post(
+    '/music-workers/:workerId/test-job',
+    async (req, res) => {
+        try {
+            const loginId =
+                getBearerToken(req);
+
+            if (!loginId) {
+                res.status(401).json({
+                    ok: false,
+                    error: 'missing_session',
+                });
+
+                return;
+            }
+
+            const session =
+                await getManagementSession(
+                    kv,
+                    loginId,
+                );
+
+            if (!session) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'invalid_or_expired_session',
+                });
+
+                return;
+            }
+
+            const {
+                workerId,
+            } = req.params;
+
+            const worker =
+                await getMusicWorker(
+                    kv,
+                    workerId,
+                );
+
+            if (!worker) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'worker_not_found',
+                });
+
+                return;
+            }
+
+            if (
+                worker.userId !==
+                session.userId
+            ) {
+                res.status(403).json({
+                    ok: false,
+                    error:
+                        'worker_owner_mismatch',
+                });
+
+                return;
+            }
+
+            const {
+                url,
+            } = req.body || {};
+
+            if (
+                typeof url !== 'string' ||
+                !url.trim()
+            ) {
+                res.status(400).json({
+                    ok: false,
+                    error:
+                        'missing_music_url',
+                });
+
+                return;
+            }
+
+            const normalizedUrl =
+                url.trim();
+
+            if (
+                !normalizedUrl.startsWith(
+                    'https://www.nicovideo.jp/',
+                ) &&
+                !normalizedUrl.startsWith(
+                    'https://nico.ms/',
+                )
+            ) {
+                res.status(400).json({
+                    ok: false,
+                    error:
+                        'unsupported_music_url',
+                });
+
+                return;
+            }
+
+            const job =
+                await createMusicJob(
+                    kv,
+                    {
+                        workerId:
+                            worker.workerId,
+                        guildId:
+                            worker.guildId,
+
+                        /*
+                         * このAPIは通信試験用なので、
+                         * VC/Text Channelはまだ渡さない。
+                         */
+                        voiceChannelId:
+                            null,
+                        textChannelId:
+                            null,
+
+                        requestedById:
+                            session.userId,
+
+                        url:
+                            normalizedUrl,
+
+                        type:
+                            'test',
+                    },
+                );
+
+            res.status(201).json({
+                ok: true,
+
+                job: {
+                    jobId:
+                        job.jobId,
+                    status:
+                        job.status,
+                    url:
+                        job.url,
+                },
+            });
+        } catch (error) {
+            console.error(
+                '[management-api] ' +
+                'music test job error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'music_test_job_failed',
             });
         }
     },

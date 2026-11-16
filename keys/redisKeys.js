@@ -70,6 +70,14 @@ function musicWorkerKey(workerId) {
     return `music-worker:${workerId}`;
 }
 
+function musicWorkerJobsKey(workerId) {
+    return `music-worker-jobs:${workerId}`;
+}
+
+function musicJobKey(jobId) {
+    return `music-job:${jobId}`;
+}
+
 function musicGuildWorkersKey(guildId) {
     return `music-workers:guild:${guildId}`;
 }
@@ -94,4 +102,7 @@ module.exports = {
     managementSessionKey,
     musicWorkerKey,
     musicGuildWorkersKey,
+
+    musicWorkerJobsKey,
+    musicJobKey,
 };
