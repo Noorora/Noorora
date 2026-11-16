@@ -355,7 +355,7 @@ if (desktopRequestId) {
                 },
 
                 guilds:
-                    manageableGuilds,
+                    availableGuilds,
             },
         );
 
@@ -422,7 +422,7 @@ res.status(200).json({
     },
 
     guilds:
-        manageableGuilds,
+        availableGuilds,
 
     loginId,
     expiresIn,
