@@ -62,6 +62,10 @@ function botOptionAuditLogKey(guildId) {
     return `bot-option:audit-log:${guildId}`;
 }
 
+function managementSessionKey(loginId) {
+    return `management-session:${loginId}`;
+}
+
 module.exports = {
     forumTargetsKey,
     forumIndexKey,

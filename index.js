@@ -148,6 +148,7 @@ app.use(
     '/api',
     createManagementRouter({
         getDiscordClient: () => client,
+        kv,
     }),
 );
 

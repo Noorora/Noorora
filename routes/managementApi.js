@@ -1,5 +1,10 @@
 const express = require('express');
-const crypto = require('crypto');
+
+const {
+    createManagementSession,
+    getManagementSession,
+    refreshManagementSession,
+} = require('../services/managementSessionService');
 
 const {
     validateOAuthConfig,
@@ -59,6 +64,7 @@ function isGuildManager(guild) {
 
 function createManagementRouter({
     getDiscordClient,
+    kv,
 }) {
     const router =
         express.Router();
@@ -229,59 +235,264 @@ function createManagementRouter({
                             }),
                         );
 
-                /*
-                 * 開発途中なので、現段階では
-                 * Access Tokenそのものを
-                 * Browserへ返さない。
-                 *
-                 * 後でWindowsアプリ用の
-                 * セッションIDに交換する。
-                 */
+                        const {
+    loginId,
+    expiresIn,
+} = await createManagementSession(
+    kv,
+    {
+        user,
+        accessToken:
+            tokens.access_token,
+    },
+);
                 res.status(200).json({
-                    ok: true,
+    ok: true,
 
-                    user: {
-                        id: user.id,
-                        username:
-                            user.username,
-                        globalName:
-                            user.global_name ||
-                            null,
-                        avatar:
-                            user.avatar,
-                    },
+    user: {
+        id: user.id,
+        username:
+            user.username,
+        globalName:
+            user.global_name ||
+            null,
+        avatar:
+            user.avatar,
+    },
 
-                    guilds:
-                        manageableGuilds,
+    guilds:
+        manageableGuilds,
 
-                    /*
-                     * 次段階でサーバー側
-                     * セッションを作成するための
-                     * 一時識別子。
-                     */
-                    loginId:
-                        crypto
-                            .randomBytes(32)
-                            .toString(
-                                'hex',
-                            ),
-                });
-            } catch (error) {
-                console.error(
-                    '[management-api] ' +
-                    'Discord OAuth error:',
-                    error,
-                );
-
-                res.status(500).json({
-                    ok: false,
-                    error:
-                        'discord_oauth_failed',
-                });
+    loginId,
+    expiresIn,
+});
             }
         },
     );
 
+    /*
+ * Windowsアプリからログイン状態を確認する。
+ *
+ * Authorization:
+ * Bearer <loginId>
+ */
+router.get(
+    '/me',
+    async (req, res) => {
+        try {
+            const authorization =
+                req.get('authorization') || '';
+
+            if (
+                !authorization.startsWith(
+                    'Bearer ',
+                )
+            ) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'missing_session',
+                });
+
+                return;
+            }
+
+            const loginId =
+                authorization
+                    .slice(
+                        'Bearer '.length,
+                    )
+                    .trim();
+
+            if (!loginId) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'missing_session',
+                });
+
+                return;
+            }
+
+            const session =
+                await getManagementSession(
+                    kv,
+                    loginId,
+                );
+
+            if (!session) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'invalid_or_expired_session',
+                });
+
+                return;
+            }
+
+            /*
+             * 使用中なら有効期限を延長。
+             * 現在は1時間。
+             */
+            await refreshManagementSession(
+                kv,
+                loginId,
+            );
+
+            res.status(200).json({
+                ok: true,
+
+                user: {
+                    id:
+                        session.userId,
+                    username:
+                        session.username,
+                    globalName:
+                        session.globalName,
+                    avatar:
+                        session.avatar,
+                },
+            });
+        } catch (error) {
+            console.error(
+                '[management-api] ' +
+                '/me error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'internal_error',
+            });
+        }
+    },
+);
+
+/*
+ * ログインユーザーが管理でき、
+ * AutoDetectorが導入されているGuild一覧を返す。
+ */
+router.get(
+    '/guilds',
+    async (req, res) => {
+        try {
+            const authorization =
+                req.get('authorization') || '';
+
+            if (
+                !authorization.startsWith(
+                    'Bearer ',
+                )
+            ) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'missing_session',
+                });
+
+                return;
+            }
+
+            const loginId =
+                authorization
+                    .slice(
+                        'Bearer '.length,
+                    )
+                    .trim();
+
+            if (!loginId) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'missing_session',
+                });
+
+                return;
+            }
+
+            const session =
+                await getManagementSession(
+                    kv,
+                    loginId,
+                );
+
+            if (!session) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'invalid_or_expired_session',
+                });
+
+                return;
+            }
+
+            /*
+             * Discordから最新のGuild一覧を取得する。
+             * ログイン時の一覧を使い回さない。
+             */
+            const guilds =
+                await getDiscordGuilds(
+                    session.accessToken,
+                );
+
+            const discordClient =
+                getDiscordClient();
+
+            const manageableGuilds =
+                guilds
+                    .filter(
+                        isGuildManager,
+                    )
+                    .filter(
+                        (guild) =>
+                            Boolean(
+                                discordClient
+                                    ?.guilds
+                                    ?.cache
+                                    ?.has(
+                                        guild.id,
+                                    ),
+                            ),
+                    )
+                    .map(
+                        (guild) => ({
+                            id:
+                                guild.id,
+                            name:
+                                guild.name,
+                            icon:
+                                guild.icon,
+                            owner:
+                                guild.owner,
+                        }),
+                    );
+
+            await refreshManagementSession(
+                kv,
+                loginId,
+            );
+
+            res.status(200).json({
+                ok: true,
+                guilds:
+                    manageableGuilds,
+            });
+        } catch (error) {
+            console.error(
+                '[management-api] ' +
+                '/guilds error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'guild_fetch_failed',
+            });
+        }
+    },
+);
     return router;
 }
 
