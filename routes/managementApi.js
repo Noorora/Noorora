@@ -16,6 +16,13 @@ const {
     getDiscordGuilds,
 } = require('../services/discordOAuthService');
 
+const {
+    registerMusicWorker,
+    heartbeatMusicWorker,
+    getMusicWorker,
+    unregisterMusicWorker,
+} = require('../services/musicWorkerService');
+
 const oauthStates = new Map();
 
 /*
@@ -98,6 +105,28 @@ function isGuildManager(guild) {
     } catch {
         return false;
     }
+}
+
+function getBearerToken(req) {
+    const authorization =
+        req.get('authorization') || '';
+
+    if (
+        !authorization.startsWith(
+            'Bearer ',
+        )
+    ) {
+        return null;
+    }
+
+    const token =
+        authorization
+            .slice(
+                'Bearer '.length,
+            )
+            .trim();
+
+    return token || null;
 }
 
 function createManagementRouter({
@@ -790,6 +819,360 @@ router.get(
             guilds:
                 request.guilds,
         });
+    },
+);
+
+/*
+ * このWindows PCを
+ * GuildのMusic Workerとして登録する。
+ */
+router.post(
+    '/music-workers/register',
+    async (req, res) => {
+        try {
+            const loginId =
+                getBearerToken(req);
+
+            if (!loginId) {
+                res.status(401).json({
+                    ok: false,
+                    error: 'missing_session',
+                });
+
+                return;
+            }
+
+            const session =
+                await getManagementSession(
+                    kv,
+                    loginId,
+                );
+
+            if (!session) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'invalid_or_expired_session',
+                });
+
+                return;
+            }
+
+            const {
+                guildId,
+                name,
+            } = req.body || {};
+
+            if (
+                typeof guildId !== 'string' ||
+                !guildId
+            ) {
+                res.status(400).json({
+                    ok: false,
+                    error: 'missing_guild_id',
+                });
+
+                return;
+            }
+
+            /*
+             * Discordから現在のGuild情報を取得し、
+             * ログインユーザーが管理可能か確認する。
+             */
+            const guilds =
+                await getDiscordGuilds(
+                    session.accessToken,
+                );
+
+            const guild =
+                guilds.find(
+                    (item) =>
+                        item.id === guildId,
+                );
+
+            if (
+                !guild ||
+                !isGuildManager(guild)
+            ) {
+                res.status(403).json({
+                    ok: false,
+                    error:
+                        'guild_permission_denied',
+                });
+
+                return;
+            }
+
+            /*
+             * AutoDetector自身が対象Guildに
+             * 入っていることも確認。
+             */
+            const discordClient =
+                getDiscordClient();
+
+            if (
+                !discordClient
+                    ?.guilds
+                    ?.cache
+                    ?.has(guildId)
+            ) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'bot_not_in_guild',
+                });
+
+                return;
+            }
+
+            const worker =
+                await registerMusicWorker(
+                    kv,
+                    {
+                        userId:
+                            session.userId,
+                        guildId,
+                        name:
+                            typeof name ===
+                                'string'
+                                ? name.trim()
+                                : null,
+                    },
+                );
+
+            await refreshManagementSession(
+                kv,
+                loginId,
+            );
+
+            res.status(201).json({
+                ok: true,
+                worker: {
+                    workerId:
+                        worker.workerId,
+                    guildId:
+                        worker.guildId,
+                    name:
+                        worker.name,
+                    status:
+                        worker.status,
+                },
+            });
+        } catch (error) {
+            console.error(
+                '[management-api] ' +
+                'music worker register error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'worker_register_failed',
+            });
+        }
+    },
+);
+
+/*
+ * Workerの生存通知。
+ */
+router.post(
+    '/music-workers/:workerId/heartbeat',
+    async (req, res) => {
+        try {
+            const loginId =
+                getBearerToken(req);
+
+            if (!loginId) {
+                res.status(401).json({
+                    ok: false,
+                    error: 'missing_session',
+                });
+
+                return;
+            }
+
+            const session =
+                await getManagementSession(
+                    kv,
+                    loginId,
+                );
+
+            if (!session) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'invalid_or_expired_session',
+                });
+
+                return;
+            }
+
+            const {
+                workerId,
+            } = req.params;
+
+            const worker =
+                await getMusicWorker(
+                    kv,
+                    workerId,
+                );
+
+            if (!worker) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'worker_not_found',
+                });
+
+                return;
+            }
+
+            /*
+             * 他人が登録したWorkerの
+             * heartbeatは更新できない。
+             */
+            if (
+                worker.userId !==
+                session.userId
+            ) {
+                res.status(403).json({
+                    ok: false,
+                    error:
+                        'worker_owner_mismatch',
+                });
+
+                return;
+            }
+
+            const updatedWorker =
+                await heartbeatMusicWorker(
+                    kv,
+                    workerId,
+                );
+
+            await refreshManagementSession(
+                kv,
+                loginId,
+            );
+
+            res.status(200).json({
+                ok: true,
+                worker: {
+                    workerId:
+                        updatedWorker.workerId,
+                    guildId:
+                        updatedWorker.guildId,
+                    status:
+                        updatedWorker.status,
+                },
+            });
+        } catch (error) {
+            console.error(
+                '[management-api] ' +
+                'music worker heartbeat error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'worker_heartbeat_failed',
+            });
+        }
+    },
+);
+
+/*
+ * このPCのWorker登録を解除する。
+ */
+router.delete(
+    '/music-workers/:workerId',
+    async (req, res) => {
+        try {
+            const loginId =
+                getBearerToken(req);
+
+            if (!loginId) {
+                res.status(401).json({
+                    ok: false,
+                    error: 'missing_session',
+                });
+
+                return;
+            }
+
+            const session =
+                await getManagementSession(
+                    kv,
+                    loginId,
+                );
+
+            if (!session) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'invalid_or_expired_session',
+                });
+
+                return;
+            }
+
+            const {
+                workerId,
+            } = req.params;
+
+            const worker =
+                await getMusicWorker(
+                    kv,
+                    workerId,
+                );
+
+            if (!worker) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'worker_not_found',
+                });
+
+                return;
+            }
+
+            if (
+                worker.userId !==
+                session.userId
+            ) {
+                res.status(403).json({
+                    ok: false,
+                    error:
+                        'worker_owner_mismatch',
+                });
+
+                return;
+            }
+
+            await unregisterMusicWorker(
+                kv,
+                workerId,
+            );
+
+            res.status(200).json({
+                ok: true,
+            });
+        } catch (error) {
+            console.error(
+                '[management-api] ' +
+                'music worker unregister error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'worker_unregister_failed',
+            });
+        }
     },
 );
     return router;

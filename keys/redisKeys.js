@@ -66,6 +66,14 @@ function managementSessionKey(loginId) {
     return `management-session:${loginId}`;
 }
 
+function musicWorkerKey(workerId) {
+    return `music-worker:${workerId}`;
+}
+
+function musicGuildWorkersKey(guildId) {
+    return `music-workers:guild:${guildId}`;
+}
+
 module.exports = {
     forumTargetsKey,
     forumIndexKey,
@@ -84,4 +92,6 @@ module.exports = {
     botAdminRoleKey,
     botOptionAuditLogKey,
     managementSessionKey,
+    musicWorkerKey,
+    musicGuildWorkersKey,
 };
