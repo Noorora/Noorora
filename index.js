@@ -22,6 +22,10 @@ const {
     syncRedisClientToUrl,
 } = require('./services/redisSyncService');
 
+const {
+    createManagementRouter,
+} = require('./routes/managementApi');
+
 if (process.env.RUN_ON_RENDER !== 'true') {
     console.log('ローカル実行は禁止されています。終了します。');
     process.exit(0);
@@ -122,6 +126,30 @@ let primaryFailureCount = 0;
 
 const app = express();
 const PORT = Number(process.env.PORT || 10000);
+
+/*
+ * Windows版AutoDetectorなどから
+ * Management APIへJSONを送れるようにする。
+ */
+app.use(
+    express.json({
+        limit: '100kb',
+    }),
+);
+
+/*
+ * AutoDetector Management API。
+ *
+ * Discord Clientは起動・停止によって
+ * 差し替わるため、clientそのものではなく
+ * getterを渡す。
+ */
+app.use(
+    '/api',
+    createManagementRouter({
+        getDiscordClient: () => client,
+    }),
+);
 
 app.get('/', (req, res) => {
     res.send('Bot is running');
