@@ -30,6 +30,16 @@ const {
     getMusicJob,
 } = require('../services/musicJobService');
 
+const {
+    getRemoteVoiceSession,
+    clearRemoteVoiceSession,
+} = require('../services/remoteVoiceCoordinator');
+
+const {
+    ChannelType,
+    GatewayOpcodes,
+} = require('discord.js');
+
 const oauthStates = new Map();
 
 /*
@@ -1631,6 +1641,318 @@ router.post(
                 ok: false,
                 error:
                     'music_test_job_failed',
+            });
+        }
+    },
+);
+
+/*
+ * Remote Voice接続の最小実験。
+ *
+ * Render側のDiscord Gatewayから
+ * Voice State Updateを送信し、
+ * Discordから返ってくる一時接続情報を
+ * Windows Workerへ返す。
+ */
+router.post(
+    '/remote-voice/test/join',
+    async (req, res) => {
+        try {
+            const loginId =
+                getBearerToken(req);
+
+            if (!loginId) {
+                res.status(401).json({
+                    ok: false,
+                    error: 'missing_session',
+                });
+
+                return;
+            }
+
+            const session =
+                await getManagementSession(
+                    kv,
+                    loginId,
+                );
+
+            if (!session) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'invalid_or_expired_session',
+                });
+
+                return;
+            }
+
+            const {
+                workerId,
+                guildId,
+                voiceChannelId,
+            } = req.body || {};
+
+            if (
+                typeof workerId !== 'string' ||
+                typeof guildId !== 'string' ||
+                typeof voiceChannelId !== 'string'
+            ) {
+                res.status(400).json({
+                    ok: false,
+                    error:
+                        'missing_remote_voice_fields',
+                });
+
+                return;
+            }
+
+            const worker =
+                await getMusicWorker(
+                    kv,
+                    workerId,
+                );
+
+            if (!worker) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'worker_not_found',
+                });
+
+                return;
+            }
+
+            if (
+                worker.userId !==
+                session.userId
+            ) {
+                res.status(403).json({
+                    ok: false,
+                    error:
+                        'worker_owner_mismatch',
+                });
+
+                return;
+            }
+
+            if (
+                worker.guildId !==
+                guildId
+            ) {
+                res.status(400).json({
+                    ok: false,
+                    error:
+                        'worker_guild_mismatch',
+                });
+
+                return;
+            }
+
+            const discordClient =
+                getDiscordClient();
+
+            if (
+                !discordClient ||
+                !discordClient.user
+            ) {
+                res.status(503).json({
+                    ok: false,
+                    error:
+                        'discord_client_not_ready',
+                });
+
+                return;
+            }
+
+            const guild =
+                await discordClient.guilds
+                    .fetch(guildId)
+                    .catch(() => null);
+
+            if (!guild) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'guild_not_found',
+                });
+
+                return;
+            }
+
+            const voiceChannel =
+                await guild.channels
+                    .fetch(voiceChannelId)
+                    .catch(() => null);
+
+            if (
+                !voiceChannel ||
+                (
+                    voiceChannel.type !==
+                        ChannelType.GuildVoice &&
+                    voiceChannel.type !==
+                        ChannelType.GuildStageVoice
+                )
+            ) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'voice_channel_not_found',
+                });
+
+                return;
+            }
+
+            const botMember =
+                guild.members.me;
+
+            if (!botMember) {
+                res.status(503).json({
+                    ok: false,
+                    error:
+                        'bot_member_not_ready',
+                });
+
+                return;
+            }
+
+            const permissions =
+                voiceChannel.permissionsFor(
+                    botMember,
+                );
+
+            if (
+                !permissions?.has(
+                    'Connect',
+                ) ||
+                !permissions.has(
+                    'Speak',
+                )
+            ) {
+                res.status(403).json({
+                    ok: false,
+                    error:
+                        'bot_voice_permission_denied',
+                });
+
+                return;
+            }
+
+            /*
+             * 前回のVoice接続情報を破棄する。
+             */
+            clearRemoteVoiceSession(
+                guildId,
+            );
+
+            /*
+             * このGuildを担当するShardから、
+             * Discord GatewayへVoice State Updateを送る。
+             */
+            guild.shard.send({
+                op:
+                    GatewayOpcodes.VoiceStateUpdate,
+
+                d: {
+                    guild_id:
+                        guildId,
+
+                    channel_id:
+                        voiceChannelId,
+
+                    self_mute:
+                        false,
+
+                    self_deaf:
+                        true,
+                },
+            });
+
+            /*
+             * VOICE_STATE_UPDATEと
+             * VOICE_SERVER_UPDATEが揃うまで、
+             * 最大8秒待つ。
+             */
+            let remoteSession =
+                null;
+
+            for (
+                let attempt = 0;
+                attempt < 40;
+                attempt += 1
+            ) {
+                await new Promise(
+                    (resolve) => {
+                        setTimeout(
+                            resolve,
+                            200,
+                        );
+                    },
+                );
+
+                remoteSession =
+                    getRemoteVoiceSession(
+                        guildId,
+                    );
+
+                if (remoteSession?.ready) {
+                    break;
+                }
+            }
+
+            if (!remoteSession?.ready) {
+                res.status(504).json({
+                    ok: false,
+                    error:
+                        'remote_voice_session_timeout',
+                });
+
+                return;
+            }
+
+            /*
+             * Bot Tokenは返さない。
+             *
+             * DiscordがこのVoice接続のために発行した
+             * session_id、endpoint、一時tokenだけを返す。
+             */
+            res.status(200).json({
+                ok: true,
+
+                voice: {
+                    guildId,
+                    channelId:
+                        voiceChannelId,
+
+                    userId:
+                        discordClient.user.id,
+
+                    sessionId:
+                        remoteSession
+                            .voiceStateUpdate
+                            .session_id,
+
+                    endpoint:
+                        remoteSession
+                            .voiceServerUpdate
+                            .endpoint,
+
+                    token:
+                        remoteSession
+                            .voiceServerUpdate
+                            .token,
+                },
+            });
+        } catch (error) {
+            console.error(
+                '[management-api] ' +
+                'remote voice test join error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'remote_voice_test_join_failed',
             });
         }
     },

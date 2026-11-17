@@ -26,6 +26,12 @@ const {
     createManagementRouter,
 } = require('./routes/managementApi');
 
+const {
+    registerRemoteVoiceCoordinator,
+} = require(
+    './services/remoteVoiceCoordinator'
+);
+
 if (process.env.RUN_ON_RENDER !== 'true') {
     console.log('ローカル実行は禁止されています。終了します。');
     process.exit(0);
@@ -325,8 +331,12 @@ async function startDiscordBot(reason = 'start requested') {
     try {
         client = createDiscordClient();
 
-        const activeClient =
-            client;
+registerRemoteVoiceCoordinator(
+    client,
+);
+
+const activeClient =
+    client;
 
         context = {
             client,
