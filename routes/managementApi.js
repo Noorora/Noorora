@@ -1877,7 +1877,7 @@ router.post(
 
             for (
                 let attempt = 0;
-                attempt < 40;
+                attempt < 150;
                 attempt += 1
             ) {
                 await new Promise(
@@ -1900,14 +1900,45 @@ router.post(
             }
 
             if (!remoteSession?.ready) {
-                res.status(504).json({
-                    ok: false,
-                    error:
-                        'remote_voice_session_timeout',
-                });
+    console.warn(
+        '[remote-voice] session timeout',
+        {
+            guildId,
+            hasVoiceState:
+                Boolean(
+                    remoteSession
+                        ?.voiceStateUpdate,
+                ),
+            hasVoiceServer:
+                Boolean(
+                    remoteSession
+                        ?.voiceServerUpdate,
+                ),
+        },
+    );
 
-                return;
-            }
+    res.status(504).json({
+        ok: false,
+        error:
+            'remote_voice_session_timeout',
+
+        diagnostic: {
+            hasVoiceState:
+                Boolean(
+                    remoteSession
+                        ?.voiceStateUpdate,
+                ),
+
+            hasVoiceServer:
+                Boolean(
+                    remoteSession
+                        ?.voiceServerUpdate,
+                ),
+        },
+    });
+
+    return;
+}
 
             /*
              * Bot Tokenは返さない。
