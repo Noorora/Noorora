@@ -20,7 +20,6 @@ const {
     registerMusicWorker,
     heartbeatMusicWorker,
     getMusicWorker,
-    setMusicWorkerStatus,
     unregisterMusicWorker,
 } = require('../services/musicWorkerService');
 
@@ -386,103 +385,40 @@ if (desktopRequestId) {
 <head>
     <meta charset="utf-8">
     <title>AutoDetector</title>
-
-    <style>
-        body {
-            margin: 0;
-            min-height: 100vh;
-            display: grid;
-            place-items: center;
-            background: #0f1115;
-            color: #ffffff;
-            font-family:
-                "Segoe UI",
-                sans-serif;
-        }
-
-        main {
-            width:
-                min(
-                    460px,
-                    calc(100% - 40px)
-                );
-
-            box-sizing:
-                border-box;
-
-            padding:
-                40px;
-
-            text-align:
-                center;
-
-            background:
-                #171a21;
-
-            border:
-                1px solid #292e38;
-
-            border-radius:
-                12px;
-        }
-
-        p {
-            color:
-                #aab0bc;
-
-            line-height:
-                1.7;
-        }
-    </style>
 </head>
-
-<body>
-    <main>
-        <h1>
+<body style="
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: #0f1115;
+    color: #ffffff;
+    font-family: 'Segoe UI', sans-serif;
+">
+    <main style="
+        width: min(460px, calc(100% - 40px));
+        box-sizing: border-box;
+        padding: 40px;
+        text-align: center;
+        background: #171a21;
+        border: 1px solid #292e38;
+        border-radius: 12px;
+    ">
+        <h1 style="margin-top: 0;">
             認証が完了しました
         </h1>
 
-        <p id="message">
-            AutoDetector Desktopへ戻ります...
+        <p style="
+            color: #aab0bc;
+            line-height: 1.7;
+        ">
+            AutoDetectorアプリへ戻ってください。
+            このブラウザ画面は閉じて構いません。
         </p>
     </main>
-
-    <script>
-        /*
-         * Windowsへ登録した
-         * autodetector:// プロトコルを呼び出す。
-         *
-         * loginIdなどの秘密情報はURLへ載せない。
-         */
-        window.location.href =
-            'autodetector://auth-complete';
-
-        /*
-         * アプリへ戻したあと、
-         * ブラウザ側のタブを閉じられる場合は閉じる。
-         *
-         * ブラウザによってwindow.close()が
-         * 拒否される場合もある。
-         */
-        setTimeout(() => {
-            window.close();
-
-            const message =
-                document.getElementById(
-                    'message'
-                );
-
-            if (message) {
-                message.textContent =
-                    'AutoDetector Desktopへ戻りました。' +
-                    'このタブが自動で閉じない場合は、' +
-                    '閉じて構いません。';
-            }
-        }, 1000);
-    </script>
 </body>
 </html>
-`);
+        `);
 
         return;
     }
@@ -948,6 +884,7 @@ router.post(
             const {
                 guildId,
                 name,
+                desktopId,
             } = req.body || {};
 
             if (
@@ -957,6 +894,19 @@ router.post(
                 res.status(400).json({
                     ok: false,
                     error: 'missing_guild_id',
+                });
+
+                return;
+            }
+
+            if (
+                typeof desktopId !== 'string' ||
+                !desktopId.trim()
+            ) {
+                res.status(400).json({
+                    ok: false,
+                    error:
+                        'missing_desktop_id',
                 });
 
                 return;
@@ -1015,12 +965,17 @@ router.post(
                     {
                         userId:
                             session.userId,
+
                         guildId,
+
                         name:
                             typeof name ===
                                 'string'
                                 ? name.trim()
                                 : null,
+
+                        desktopId:
+                            desktopId.trim(),
                     },
                 );
 

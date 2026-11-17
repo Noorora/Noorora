@@ -82,6 +82,13 @@ function musicGuildWorkersKey(guildId) {
     return `music-workers:guild:${guildId}`;
 }
 
+function musicDesktopWorkerKey(
+    desktopId,
+    guildId,
+) {
+    return `music-desktop-worker:${desktopId}:${guildId}`;
+}
+
 module.exports = {
     forumTargetsKey,
     forumIndexKey,
@@ -102,6 +109,7 @@ module.exports = {
     managementSessionKey,
     musicWorkerKey,
     musicGuildWorkersKey,
+    musicDesktopWorkerKey,
 
     musicWorkerJobsKey,
     musicJobKey,

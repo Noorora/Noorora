@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const {
     musicWorkerKey,
     musicGuildWorkersKey,
+    musicDesktopWorkerKey,
 } = require('../keys/redisKeys');
 
 
@@ -24,36 +25,156 @@ async function registerMusicWorker(
         userId,
         guildId,
         name,
+        desktopId,
     },
 ) {
+    if (!desktopId) {
+        throw new Error(
+            'desktopId が指定されていません。',
+        );
+    }
+
+    const desktopWorkerKey =
+        musicDesktopWorkerKey(
+            desktopId,
+            guildId,
+        );
+
+    /*
+     * 同じPC + 同じGuildの古いWorkerを探す。
+     */
+    const oldWorkerId =
+        await kv.get(
+            desktopWorkerKey,
+        );
+
+    if (oldWorkerId) {
+        const oldWorkerRaw =
+            await kv.get(
+                musicWorkerKey(
+                    oldWorkerId,
+                ),
+            );
+
+        if (oldWorkerRaw) {
+            try {
+                const oldWorker =
+                    JSON.parse(
+                        oldWorkerRaw,
+                    );
+
+                /*
+                 * 同じユーザーのDesktop登録だけ
+                 * 置き換える。
+                 */
+                if (
+                    oldWorker.userId ===
+                    userId
+                ) {
+                    await Promise.all([
+                        kv.del(
+                            musicWorkerKey(
+                                oldWorkerId,
+                            ),
+                        ),
+
+                        kv.sRem(
+                            musicGuildWorkersKey(
+                                guildId,
+                            ),
+                            oldWorkerId,
+                        ),
+                    ]);
+                }
+            } catch {
+                /*
+                 * 壊れた古いWorker情報なら
+                 * Guild一覧からだけ掃除する。
+                 */
+                await kv.sRem(
+                    musicGuildWorkersKey(
+                        guildId,
+                    ),
+                    oldWorkerId,
+                );
+            }
+        } else {
+            /*
+             * Worker本体はTTL切れ済み。
+             */
+            await kv.sRem(
+                musicGuildWorkersKey(
+                    guildId,
+                ),
+                oldWorkerId,
+            );
+        }
+    }
+
     const workerId =
         createWorkerId();
 
     const worker = {
         workerId,
+        desktopId,
         userId,
         guildId,
+
         name:
-            name || 'AutoDetector Desktop',
-        status: 'idle',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+            name ||
+            'AutoDetector Desktop',
+
+        status:
+            'idle',
+
+        createdAt:
+            Date.now(),
+
+        updatedAt:
+            Date.now(),
     };
 
+    /*
+     * Worker本体。
+     * HeartbeatでTTLを延長する。
+     */
     await kv.set(
-        musicWorkerKey(workerId),
-        JSON.stringify(worker),
+        musicWorkerKey(
+            workerId,
+        ),
+        JSON.stringify(
+            worker,
+        ),
         {
-            EX: MUSIC_WORKER_TTL_SECONDS,
+            EX:
+                MUSIC_WORKER_TTL_SECONDS,
         },
     );
 
     /*
-     * Guild側にはWorker IDだけを登録する。
+     * Guild → Worker一覧。
      */
     await kv.sAdd(
-        musicGuildWorkersKey(guildId),
+        musicGuildWorkersKey(
+            guildId,
+        ),
         workerId,
+    );
+
+    /*
+     * Desktop + Guild → 現在のWorker。
+     *
+     * Worker本体より少し長く保持。
+     * 再起動直後の置換に利用する。
+     */
+    await kv.set(
+        desktopWorkerKey,
+        workerId,
+        {
+            EX:
+                MUSIC_WORKER_TTL_SECONDS *
+                3,
+        },
     );
 
     return worker;
@@ -221,7 +342,7 @@ async function unregisterMusicWorker(
         return false;
     }
 
-    await Promise.all([
+    const deleteOperations = [
         kv.del(
             musicWorkerKey(
                 workerId,
@@ -234,7 +355,22 @@ async function unregisterMusicWorker(
             ),
             workerId,
         ),
-    ]);
+    ];
+
+    if (worker.desktopId) {
+        deleteOperations.push(
+            kv.del(
+                musicDesktopWorkerKey(
+                    worker.desktopId,
+                    worker.guildId,
+                ),
+            ),
+        );
+    }
+
+    await Promise.all(
+        deleteOperations,
+    );
 
     return true;
 }
