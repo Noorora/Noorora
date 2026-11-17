@@ -14,6 +14,30 @@ function isMusicEnabled() {
     );
 }
 
+async function canUseMusic(
+    kv,
+    guildId,
+) {
+    /*
+     * 従来のPC版AutoDetectorが有効なら使用可能。
+     */
+    if (isMusicEnabled()) {
+        return true;
+    }
+
+    /*
+     * または、このGuildに
+     * Desktop Music Workerがいれば使用可能。
+     */
+    const worker =
+        await findAvailableMusicWorker(
+            kv,
+            guildId,
+        );
+
+    return Boolean(worker);
+}
+
 const { ephemeralOptions } = require('../utils/ephemeral');
 const { addAuditLog } = require('../utils/auditLog');
 const { getMusicPlayer } = require('../services/musicPlayer');
@@ -164,18 +188,26 @@ async function execute(
     interaction,
     context,
 ) {
-    if (!isMusicEnabled()) {
+    const { kv } =
+        context;
+
+    const musicAvailable =
+        await canUseMusic(
+            kv,
+            interaction.guildId,
+        );
+
+    if (!musicAvailable) {
         await interaction.reply(
             ephemeralOptions({
                 content:
-                    'Music機能は、PC版AutoDetectorが起動しているときだけ使用できます。',
+                    '現在、利用可能なMusic Workerがありません。\n' +
+                    'AutoDetector Desktopで、このサーバーのMusic Workerを起動してください。',
             }),
         );
 
         return;
     }
-
-    const { kv } = context;
 
     await interaction.reply(
         ephemeralOptions({
@@ -206,30 +238,36 @@ async function handleComponent(
         return false;
     }
 
-    if (!isMusicEnabled()) {
+    const musicAvailable =
+        await canUseMusic(
+            kv,
+            interaction.guildId,
+        );
+
+    if (!musicAvailable) {
+        const options =
+            ephemeralOptions({
+                content:
+                    '現在、利用可能なMusic Workerがありません。\n' +
+                    '従来のPC版AutoDetector、または' +
+                    'AutoDetector DesktopのMusic Workerを起動してください。',
+            });
+
         if (
             interaction.deferred ||
             interaction.replied
         ) {
             await interaction.followUp(
-                ephemeralOptions({
-                    content:
-                        'Music機能は、PC版AutoDetectorが起動しているときだけ使用できます。',
-                }),
+                options,
             );
         } else {
             await interaction.reply(
-                ephemeralOptions({
-                    content:
-                        'Music機能は、PC版AutoDetectorが起動しているときだけ使用できます。',
-                }),
+                options,
             );
         }
 
         return true;
     }
-
-    const { kv } = context;
 
     if (interaction.isButton()) {
         if (interaction.customId === 'music_menu_play') {
