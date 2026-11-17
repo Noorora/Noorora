@@ -20,6 +20,7 @@ const {
     registerMusicWorker,
     heartbeatMusicWorker,
     getMusicWorker,
+    setMusicWorkerStatus,
     unregisterMusicWorker,
 } = require('../services/musicWorkerService');
 
@@ -1299,18 +1300,27 @@ router.get(
                 job: {
                     jobId:
                         job.jobId,
+
                     type:
                         job.type,
+
                     guildId:
                         job.guildId,
+
                     voiceChannelId:
                         job.voiceChannelId,
+
                     textChannelId:
                         job.textChannelId,
+
                     requestedById:
                         job.requestedById,
+
                     url:
                         job.url,
+
+                    volume:
+                        job.volume ?? 0.2,
                 },
             });
         } catch (error) {
@@ -1858,65 +1868,65 @@ const discordClient =
  * 一度退出してから接続し直し、
  * 新しいVoice Sessionを取得する。
  */
-            guild.shard.send({
-                op:
-                    GatewayOpcodes.VoiceStateUpdate,
+guild.shard.send({
+    op:
+        GatewayOpcodes.VoiceStateUpdate,
 
-                d: {
-                    guild_id:
-                        guildId,
+    d: {
+        guild_id:
+            guildId,
 
-                    channel_id:
-                        null,
+        channel_id:
+            null,
 
-                    self_mute:
-                        false,
+        self_mute:
+            false,
 
-                    self_deaf:
-                        true,
-                },
-            });
+        self_deaf:
+            true,
+    },
+});
 
-            /*
-             * 退出イベントを処理する時間を確保する。
-             */
-            await new Promise(
-                (resolve) => {
-                    setTimeout(
-                        resolve,
-                        1000,
-                    );
-                },
-            );
+/*
+ * 退出イベントを処理する時間を確保する。
+ */
+await new Promise(
+    (resolve) => {
+        setTimeout(
+            resolve,
+            1000,
+        );
+    },
+);
 
-            /*
-             * 退出後に古いVoice情報を破棄する。
-             */
-            clearRemoteVoiceSession(
-                guildId,
-            );
+/*
+ * 退出後に古いVoice情報を破棄する。
+ */
+clearRemoteVoiceSession(
+    guildId,
+);
 
-            /*
-             * 対象VCへ改めて参加する。
-             */
-            guild.shard.send({
-                op:
-                    GatewayOpcodes.VoiceStateUpdate,
+/*
+ * 対象VCへ改めて参加する。
+ */
+guild.shard.send({
+    op:
+        GatewayOpcodes.VoiceStateUpdate,
 
-                d: {
-                    guild_id:
-                        guildId,
+    d: {
+        guild_id:
+            guildId,
 
-                    channel_id:
-                        voiceChannelId,
+        channel_id:
+            voiceChannelId,
 
-                    self_mute:
-                        false,
+        self_mute:
+            false,
 
-                    self_deaf:
-                        true,
-                },
-            });
+        self_deaf:
+            true,
+    },
+});
 
             /*
              * VOICE_STATE_UPDATEと
@@ -2296,7 +2306,145 @@ router.get(
             });
         }
     },
-);
+    );
+
+    /*
+ * Music Workerの状態を更新する。
+ *
+ * 現在は再生完了後に
+ * busy -> idle へ戻す用途。
+ */
+    router.post(
+        '/music-workers/:workerId/status',
+        async (req, res) => {
+            try {
+                const loginId =
+                    getBearerToken(req);
+
+                if (!loginId) {
+                    res.status(401).json({
+                        ok: false,
+                        error:
+                            'missing_session',
+                    });
+
+                    return;
+                }
+
+                const session =
+                    await getManagementSession(
+                        kv,
+                        loginId,
+                    );
+
+                if (!session) {
+                    res.status(401).json({
+                        ok: false,
+                        error:
+                            'invalid_or_expired_session',
+                    });
+
+                    return;
+                }
+
+                const {
+                    workerId,
+                } = req.params;
+
+                const worker =
+                    await getMusicWorker(
+                        kv,
+                        workerId,
+                    );
+
+                if (!worker) {
+                    res.status(404).json({
+                        ok: false,
+                        error:
+                            'worker_not_found',
+                    });
+
+                    return;
+                }
+
+                if (
+                    worker.userId !==
+                    session.userId
+                ) {
+                    res.status(403).json({
+                        ok: false,
+                        error:
+                            'worker_owner_mismatch',
+                    });
+
+                    return;
+                }
+
+                const {
+                    status,
+                } = req.body || {};
+
+                if (
+                    status !== 'idle' &&
+                    status !== 'busy'
+                ) {
+                    res.status(400).json({
+                        ok: false,
+                        error:
+                            'invalid_worker_status',
+                    });
+
+                    return;
+                }
+
+                const updatedWorker =
+                    await setMusicWorkerStatus(
+                        kv,
+                        workerId,
+                        status,
+                    );
+
+                if (!updatedWorker) {
+                    res.status(404).json({
+                        ok: false,
+                        error:
+                            'worker_not_found',
+                    });
+
+                    return;
+                }
+
+                await refreshManagementSession(
+                    kv,
+                    loginId,
+                );
+
+                res.status(200).json({
+                    ok: true,
+
+                    worker: {
+                        workerId:
+                            updatedWorker.workerId,
+
+                        status:
+                            updatedWorker.status,
+                    },
+                });
+            } catch (error) {
+                console.error(
+                    '[management-api] ' +
+                    'music worker status error:',
+                    error,
+                );
+
+                res.status(500).json({
+                    ok: false,
+                    error:
+                        'worker_status_failed',
+                });
+            }
+        },
+    );
     return router;
 }
 

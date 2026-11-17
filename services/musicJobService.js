@@ -23,6 +23,7 @@ async function createMusicJob(
         textChannelId,
         requestedById,
         url,
+        volume = 0.2,
         type = 'play',
     },
 ) {
@@ -37,6 +38,7 @@ async function createMusicJob(
         textChannelId,
         requestedById,
         url,
+        volume,
         type,
         status: 'pending',
         createdAt: Date.now(),

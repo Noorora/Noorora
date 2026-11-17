@@ -18,6 +18,15 @@ const { ephemeralOptions } = require('../utils/ephemeral');
 const { addAuditLog } = require('../utils/auditLog');
 const { getMusicPlayer } = require('../services/musicPlayer');
 
+const {
+    findAvailableMusicWorker,
+    setMusicWorkerStatus,
+} = require('../services/musicWorkerService');
+
+const {
+    createMusicJob,
+} = require('../services/musicJobService');
+
 function musicDefaultVolumeKey(guildId) {
     return `music-option:default-volume:${guildId}`;
 }
@@ -304,39 +313,135 @@ async function handleComponent(
     }
 
     if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'music_play_modal') {
-            const url = interaction.fields
-                .getTextInputValue('url')
-                .trim();
+        if (
+            interaction.customId ===
+            'music_play_modal'
+        ) {
+            const url =
+                interaction.fields
+                    .getTextInputValue('url')
+                    .trim();
 
             await interaction.deferReply(
                 ephemeralOptions(),
             );
 
-            const volume = await getDefaultVolume(
-                kv,
-                interaction.guildId,
-            );
+            /*
+             * コマンド実行者が現在参加している
+             * VCを取得する。
+             */
+            const member =
+                await interaction.guild.members
+                    .fetch(
+                        interaction.user.id,
+                    )
+                    .catch(
+                        () =>
+                            interaction.member ??
+                            null,
+                    );
 
-            const player = getMusicPlayer(interaction.guildId);
+            const voiceChannel =
+                member?.voice?.channel;
 
-            const result = await player.enqueue(
-                interaction,
-                url,
-                volume,
-            );
+            if (!voiceChannel) {
+                await interaction.editReply({
+                    content:
+                        '先にボイスチャンネルに参加してください。',
+                });
 
-            if (result.ok) {
-                await addAuditLog(
-                    interaction,
-                    kv,
-                    'Music 再生追加',
-                    `URL: ${url} / 音量: ${formatVolumePercent(volume)}`,
-                ).catch(() => null);
+                return true;
             }
 
+            /*
+             * このGuildで待機中の
+             * Windows Music Workerを探す。
+             */
+            const worker =
+                await findAvailableMusicWorker(
+                    kv,
+                    interaction.guildId,
+                );
+
+            if (!worker) {
+                await interaction.editReply({
+                    content:
+                        '現在、このサーバーで利用可能なMusic Workerがありません。\n' +
+                        'AutoDetector Desktopを起動して、' +
+                        'このサーバーのMusic Workerを開始してください。',
+                });
+
+                return true;
+            }
+
+            const volume =
+                await getDefaultVolume(
+                    kv,
+                    interaction.guildId,
+                );
+
+            /*
+             * Renderでは音源を取得しない。
+             * URLとDiscord上の必要情報だけを
+             * Windows Workerへ渡す。
+             */
+            const job =
+                await createMusicJob(
+                    kv,
+                    {
+                        workerId:
+                            worker.workerId,
+
+                        guildId:
+                            interaction.guildId,
+
+                        voiceChannelId:
+                            voiceChannel.id,
+
+                        textChannelId:
+                            interaction.channelId,
+
+                        requestedById:
+                            interaction.user.id,
+
+                        url,
+
+                        volume,
+
+                        type:
+                            'play',
+                    },
+                );
+
+            /*
+             * 同じWorkerへ同時に複数の再生を
+             * 割り当てないようbusyへ変更する。
+             */
+            await setMusicWorkerStatus(
+                kv,
+                worker.workerId,
+                'busy',
+            );
+
+            await addAuditLog(
+                interaction,
+                kv,
+                'Music Worker再生要求',
+                `URL: ${url} / ` +
+                `Worker: ${worker.name} / ` +
+                `VC: ${voiceChannel.id} / ` +
+                `音量: ${formatVolumePercent(volume)} / ` +
+                `Job: ${job.jobId}`,
+            ).catch(
+                () => null,
+            );
+
             await interaction.editReply({
-                content: result.message,
+                content:
+                    '🎵 Music Workerへ再生要求を送信しました。\n' +
+                    `VC: <#${voiceChannel.id}>\n` +
+                    `Worker: ${worker.name}\n` +
+                    `URL: ${url}`,
             });
 
             return true;
