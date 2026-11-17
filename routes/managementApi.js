@@ -33,6 +33,9 @@ const {
 const {
     getRemoteVoiceSession,
     clearRemoteVoiceSession,
+    createRemoteVoiceBridge,
+    getRemoteVoiceBridge,
+    takeRemoteVoiceBridgeEvents,
 } = require('../services/remoteVoiceCoordinator');
 
 const {
@@ -1736,20 +1739,30 @@ router.post(
             }
 
             if (
-                worker.guildId !==
-                guildId
-            ) {
-                res.status(400).json({
-                    ok: false,
-                    error:
-                        'worker_guild_mismatch',
-                });
+    worker.guildId !==
+    guildId
+) {
+    res.status(400).json({
+        ok: false,
+        error:
+            'worker_guild_mismatch',
+    });
 
-                return;
-            }
+    return;
+}
 
-            const discordClient =
-                getDiscordClient();
+/*
+ * GuildとWorkerの対応確認が成功した後に
+ * Bridgeを作成する。
+ */
+const bridge =
+    createRemoteVoiceBridge({
+        guildId,
+        workerId,
+    });
+
+const discordClient =
+    getDiscordClient();
 
             if (
                 !discordClient ||
@@ -1946,33 +1959,36 @@ router.post(
              * DiscordがこのVoice接続のために発行した
              * session_id、endpoint、一時tokenだけを返す。
              */
-            res.status(200).json({
-                ok: true,
+           res.status(200).json({
+    ok: true,
 
-                voice: {
-                    guildId,
-                    channelId:
-                        voiceChannelId,
+    bridgeId:
+        bridge.bridgeId,
 
-                    userId:
-                        discordClient.user.id,
+    voice: {
+        guildId,
+        channelId:
+            voiceChannelId,
 
-                    sessionId:
-                        remoteSession
-                            .voiceStateUpdate
-                            .session_id,
+        userId:
+            discordClient.user.id,
 
-                    endpoint:
-                        remoteSession
-                            .voiceServerUpdate
-                            .endpoint,
+        sessionId:
+            remoteSession
+                .voiceStateUpdate
+                .session_id,
 
-                    token:
-                        remoteSession
-                            .voiceServerUpdate
-                            .token,
-                },
-            });
+        endpoint:
+            remoteSession
+                .voiceServerUpdate
+                .endpoint,
+
+        token:
+            remoteSession
+                .voiceServerUpdate
+                .token,
+    },
+});
         } catch (error) {
             console.error(
                 '[management-api] ' +
@@ -1984,6 +2000,261 @@ router.post(
                 ok: false,
                 error:
                     'remote_voice_test_join_failed',
+            });
+        }
+    },
+);
+
+/*
+ * Voice Workerが要求したGateway payloadを
+ * Render上のDiscord Gatewayへ中継する。
+ */
+router.post(
+    '/remote-voice/bridge/:bridgeId/gateway',
+    async (req, res) => {
+        try {
+            const loginId =
+                getBearerToken(req);
+
+            if (!loginId) {
+                res.status(401).json({
+                    ok: false,
+                    error: 'missing_session',
+                });
+
+                return;
+            }
+
+            const session =
+                await getManagementSession(
+                    kv,
+                    loginId,
+                );
+
+            if (!session) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'invalid_or_expired_session',
+                });
+
+                return;
+            }
+
+            const bridge =
+                getRemoteVoiceBridge(
+                    req.params.bridgeId,
+                );
+
+            if (!bridge) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'voice_bridge_not_found',
+                });
+
+                return;
+            }
+
+            const worker =
+                await getMusicWorker(
+                    kv,
+                    bridge.workerId,
+                );
+
+            if (
+                !worker ||
+                worker.userId !==
+                    session.userId
+            ) {
+                res.status(403).json({
+                    ok: false,
+                    error:
+                        'voice_bridge_owner_mismatch',
+                });
+
+                return;
+            }
+
+            const payload =
+                req.body?.payload;
+
+            if (
+                !payload ||
+                typeof payload !== 'object'
+            ) {
+                res.status(400).json({
+                    ok: false,
+                    error:
+                        'missing_gateway_payload',
+                });
+
+                return;
+            }
+
+            /*
+             * Voice Workerから通常Gatewayへ送れるのは
+             * Voice State Updateだけに限定する。
+             */
+            if (
+                payload.op !==
+                GatewayOpcodes.VoiceStateUpdate
+            ) {
+                res.status(400).json({
+                    ok: false,
+                    error:
+                        'unsupported_gateway_opcode',
+                });
+
+                return;
+            }
+
+            const discordClient =
+                getDiscordClient();
+
+            const guild =
+                discordClient
+                    ?.guilds
+                    ?.cache
+                    ?.get(
+                        bridge.guildId,
+                    );
+
+            if (!guild) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'guild_not_found',
+                });
+
+                return;
+            }
+
+            guild.shard.send(
+                payload,
+            );
+
+            await refreshManagementSession(
+                kv,
+                loginId,
+            );
+
+            res.status(200).json({
+                ok: true,
+            });
+        } catch (error) {
+            console.error(
+                '[remote-voice] ' +
+                'gateway bridge error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'voice_bridge_gateway_failed',
+            });
+        }
+    },
+);
+
+/*
+ * Discord Gatewayから受信したVoiceイベントを
+ * Voice Workerへ返す。
+ */
+router.get(
+    '/remote-voice/bridge/:bridgeId/events',
+    async (req, res) => {
+        try {
+            const loginId =
+                getBearerToken(req);
+
+            if (!loginId) {
+                res.status(401).json({
+                    ok: false,
+                    error: 'missing_session',
+                });
+
+                return;
+            }
+
+            const session =
+                await getManagementSession(
+                    kv,
+                    loginId,
+                );
+
+            if (!session) {
+                res.status(401).json({
+                    ok: false,
+                    error:
+                        'invalid_or_expired_session',
+                });
+
+                return;
+            }
+
+            const bridge =
+                getRemoteVoiceBridge(
+                    req.params.bridgeId,
+                );
+
+            if (!bridge) {
+                res.status(404).json({
+                    ok: false,
+                    error:
+                        'voice_bridge_not_found',
+                });
+
+                return;
+            }
+
+            const worker =
+                await getMusicWorker(
+                    kv,
+                    bridge.workerId,
+                );
+
+            if (
+                !worker ||
+                worker.userId !==
+                    session.userId
+            ) {
+                res.status(403).json({
+                    ok: false,
+                    error:
+                        'voice_bridge_owner_mismatch',
+                });
+
+                return;
+            }
+
+            const events =
+                takeRemoteVoiceBridgeEvents(
+                    bridge.bridgeId,
+                );
+
+            await refreshManagementSession(
+                kv,
+                loginId,
+            );
+
+            res.status(200).json({
+                ok: true,
+                events:
+                    events || [],
+            });
+        } catch (error) {
+            console.error(
+                '[remote-voice] ' +
+                'event bridge error:',
+                error,
+            );
+
+            res.status(500).json({
+                ok: false,
+                error:
+                    'voice_bridge_events_failed',
             });
         }
     },

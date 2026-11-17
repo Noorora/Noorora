@@ -1,6 +1,14 @@
+const crypto = require('crypto');
+
 const {
     GatewayDispatchEvents,
 } = require('discord.js');
+
+const bridgeSessions =
+    new Map();
+
+const BRIDGE_SESSION_TTL_MS =
+    2 * 60 * 1000;
 
 /*
  * GuildごとのRemote Voice接続情報。
@@ -72,6 +80,12 @@ function registerRemoteVoiceCoordinator(
                 'VOICE_STATE_UPDATE received ' +
                 `guild=${payload.guild_id}`,
             );
+
+            pushBridgeEvent(
+    payload.guild_id,
+    'VOICE_STATE_UPDATE',
+    payload,
+);
         },
     );
 
@@ -107,6 +121,12 @@ function registerRemoteVoiceCoordinator(
                 `guild=${payload.guild_id} ` +
                 `endpoint=${payload.endpoint || 'none'}`,
             );
+
+            pushBridgeEvent(
+    payload.guild_id,
+    'VOICE_SERVER_UPDATE',
+    payload,
+);
         },
     );
 
@@ -155,8 +175,134 @@ function clearRemoteVoiceSession(
     );
 }
 
+function createRemoteVoiceBridge({
+    guildId,
+    workerId,
+}) {
+    cleanupRemoteVoiceBridges();
+
+    const bridgeId =
+        crypto
+            .randomBytes(32)
+            .toString('hex');
+
+    const bridge = {
+        bridgeId,
+        guildId,
+        workerId,
+        events: [],
+        createdAt:
+            Date.now(),
+        updatedAt:
+            Date.now(),
+    };
+
+    bridgeSessions.set(
+        bridgeId,
+        bridge,
+    );
+
+    return bridge;
+}
+
+function pushBridgeEvent(
+    guildId,
+    type,
+    payload,
+) {
+    const now =
+        Date.now();
+
+    for (
+        const bridge
+        of bridgeSessions.values()
+    ) {
+        if (
+            bridge.guildId !==
+            guildId
+        ) {
+            continue;
+        }
+
+        bridge.events.push({
+            type,
+            payload,
+        });
+
+        /*
+         * 暴走防止。
+         * AudioデータではなくGatewayイベントだけ。
+         */
+        if (
+            bridge.events.length >
+            20
+        ) {
+            bridge.events.shift();
+        }
+
+        bridge.updatedAt =
+            now;
+    }
+}
+
+function takeRemoteVoiceBridgeEvents(
+    bridgeId,
+) {
+    const bridge =
+        bridgeSessions.get(
+            bridgeId,
+        );
+
+    if (!bridge) {
+        return null;
+    }
+
+    bridge.updatedAt =
+        Date.now();
+
+    return bridge.events.splice(
+        0,
+        bridge.events.length,
+    );
+}
+
+function getRemoteVoiceBridge(
+    bridgeId,
+) {
+    return (
+        bridgeSessions.get(
+            bridgeId,
+        ) || null
+    );
+}
+
+function cleanupRemoteVoiceBridges() {
+    const now =
+        Date.now();
+
+    for (
+        const [
+            bridgeId,
+            bridge,
+        ] of bridgeSessions
+    ) {
+        if (
+            now - bridge.updatedAt >
+            BRIDGE_SESSION_TTL_MS
+        ) {
+            bridgeSessions.delete(
+                bridgeId,
+            );
+        }
+    }
+}
+
+
 module.exports = {
     registerRemoteVoiceCoordinator,
     getRemoteVoiceSession,
     clearRemoteVoiceSession,
+    createRemoteVoiceBridge,
+    getRemoteVoiceBridge,
+    takeRemoteVoiceBridgeEvents,
 };
