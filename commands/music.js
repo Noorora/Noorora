@@ -238,6 +238,17 @@ async function handleComponent(
         return false;
     }
 
+    /*
+     * 先にRedis Clientを取得する。
+     */
+    const { kv } =
+        context;
+
+    /*
+     * 従来PC版、
+     * またはDesktop Music Workerの
+     * どちらかが利用可能ならMusicを使える。
+     */
     const musicAvailable =
         await canUseMusic(
             kv,
@@ -269,8 +280,14 @@ async function handleComponent(
         return true;
     }
 
+    /*
+     * ボタン操作
+     */
     if (interaction.isButton()) {
-        if (interaction.customId === 'music_menu_play') {
+        if (
+            interaction.customId ===
+            'music_menu_play'
+        ) {
             await interaction.showModal(
                 buildMusicPlayModal(),
             );
@@ -278,9 +295,17 @@ async function handleComponent(
             return true;
         }
 
-        if (interaction.customId === 'music_menu_skip') {
-            const player = getMusicPlayer(interaction.guildId);
-            const result = player.skip();
+        if (
+            interaction.customId ===
+            'music_menu_skip'
+        ) {
+            const player =
+                getMusicPlayer(
+                    interaction.guildId,
+                );
+
+            const result =
+                player.skip();
 
             if (result.ok) {
                 await addAuditLog(
@@ -288,21 +313,32 @@ async function handleComponent(
                     kv,
                     'Music スキップ',
                     result.message,
-                ).catch(() => null);
+                ).catch(
+                    () => null,
+                );
             }
 
             await interaction.reply(
                 ephemeralOptions({
-                    content: result.message,
+                    content:
+                        result.message,
                 }),
             );
 
             return true;
         }
 
-        if (interaction.customId === 'music_menu_stop') {
-            const player = getMusicPlayer(interaction.guildId);
-            const result = player.stop();
+        if (
+            interaction.customId ===
+            'music_menu_stop'
+        ) {
+            const player =
+                getMusicPlayer(
+                    interaction.guildId,
+                );
+
+            const result =
+                player.stop();
 
             if (result.ok) {
                 await addAuditLog(
@@ -310,38 +346,54 @@ async function handleComponent(
                     kv,
                     'Music 停止',
                     result.message,
-                ).catch(() => null);
+                ).catch(
+                    () => null,
+                );
             }
 
             await interaction.reply(
                 ephemeralOptions({
-                    content: result.message,
+                    content:
+                        result.message,
                 }),
             );
 
             return true;
         }
 
-        if (interaction.customId === 'music_menu_queue') {
-            const player = getMusicPlayer(interaction.guildId);
+        if (
+            interaction.customId ===
+            'music_menu_queue'
+        ) {
+            const player =
+                getMusicPlayer(
+                    interaction.guildId,
+                );
 
             await interaction.reply(
                 ephemeralOptions({
-                    content: player.getQueueText(),
+                    content:
+                        player.getQueueText(),
                 }),
             );
 
             return true;
         }
 
-        if (interaction.customId === 'music_menu_volume') {
-            const currentVolume = await getDefaultVolume(
-                kv,
-                interaction.guildId,
-            );
+        if (
+            interaction.customId ===
+            'music_menu_volume'
+        ) {
+            const currentVolume =
+                await getDefaultVolume(
+                    kv,
+                    interaction.guildId,
+                );
 
             await interaction.showModal(
-                buildMusicVolumeModal(currentVolume),
+                buildMusicVolumeModal(
+                    currentVolume,
+                ),
             );
 
             return true;
@@ -350,14 +402,22 @@ async function handleComponent(
         return false;
     }
 
+    /*
+     * Modal処理
+     */
     if (interaction.isModalSubmit()) {
+        /*
+         * 再生URL
+         */
         if (
             interaction.customId ===
             'music_play_modal'
         ) {
             const url =
                 interaction.fields
-                    .getTextInputValue('url')
+                    .getTextInputValue(
+                        'url',
+                    )
                     .trim();
 
             await interaction.deferReply(
@@ -365,8 +425,7 @@ async function handleComponent(
             );
 
             /*
-             * コマンド実行者が現在参加している
-             * VCを取得する。
+             * コマンド実行者が現在いるVC。
              */
             const member =
                 await interaction.guild.members
@@ -392,8 +451,8 @@ async function handleComponent(
             }
 
             /*
-             * このGuildで待機中の
-             * Windows Music Workerを探す。
+             * このGuildで利用できる
+             * idle Music Workerを取得。
              */
             const worker =
                 await findAvailableMusicWorker(
@@ -419,9 +478,9 @@ async function handleComponent(
                 );
 
             /*
-             * Renderでは音源を取得しない。
-             * URLとDiscord上の必要情報だけを
-             * Windows Workerへ渡す。
+             * Renderでは音源取得しない。
+             *
+             * Desktop Workerへ渡すJobだけ作成。
              */
             const job =
                 await createMusicJob(
@@ -452,8 +511,8 @@ async function handleComponent(
                 );
 
             /*
-             * 同じWorkerへ同時に複数の再生を
-             * 割り当てないようbusyへ変更する。
+             * 同じWorkerを別の再生へ
+             * 同時割当しないためbusyにする。
              */
             await setMusicWorkerStatus(
                 kv,
@@ -485,28 +544,43 @@ async function handleComponent(
             return true;
         }
 
-        if (interaction.customId === 'music_volume_modal') {
-            const raw = interaction.fields
-                .getTextInputValue('volume_percent')
-                .trim();
+        /*
+         * 音量設定
+         */
+        if (
+            interaction.customId ===
+            'music_volume_modal'
+        ) {
+            const raw =
+                interaction.fields
+                    .getTextInputValue(
+                        'volume_percent',
+                    )
+                    .trim();
 
-            const percent = Number(raw);
+            const percent =
+                Number(raw);
 
             if (
-                !Number.isFinite(percent) ||
+                !Number.isFinite(
+                    percent,
+                ) ||
                 percent < 5 ||
                 percent > 200
             ) {
                 await interaction.reply(
                     ephemeralOptions({
-                        content: '音量は 5〜200 の数字で入力してください。例: 45 / 80 / 100 / 150',
+                        content:
+                            '音量は 5〜200 の数字で入力してください。' +
+                            '例: 20 / 45 / 80 / 100',
                     }),
                 );
 
                 return true;
             }
 
-            const volume = percent / 100;
+            const volume =
+                percent / 100;
 
             await setDefaultVolume(
                 kv,
@@ -514,22 +588,33 @@ async function handleComponent(
                 volume,
             );
 
-            const player = getMusicPlayer(interaction.guildId);
+            /*
+             * 従来PC版Music Playerが動いている場合にも
+             * これまでどおり反映。
+             */
+            const player =
+                getMusicPlayer(
+                    interaction.guildId,
+                );
 
-            player.setVolume(volume);
+            player.setVolume(
+                volume,
+            );
 
             await addAuditLog(
                 interaction,
                 kv,
                 'Music 音量設定',
                 `Music のデフォルト音量を ${percent}% に設定しました。`,
-            ).catch(() => null);
+            ).catch(
+                () => null,
+            );
 
             await interaction.reply(
                 ephemeralOptions({
                     content:
                         `Music のデフォルト音量を **${percent}%** に設定しました。\n` +
-                        '現在再生中の曲がある場合は、その曲にも反映します。',
+                        '次回のDesktop Worker再生にも反映されます。',
                 }),
             );
 
