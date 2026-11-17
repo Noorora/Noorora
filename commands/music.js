@@ -19,23 +19,24 @@ async function canUseMusic(
     guildId,
 ) {
     /*
-     * 従来のPC版AutoDetectorが有効なら使用可能。
+     * 従来PC版が有効なら使用可能。
      */
     if (isMusicEnabled()) {
         return true;
     }
 
     /*
-     * または、このGuildに
-     * Desktop Music Workerがいれば使用可能。
+     * Desktop Workerは、
+     * idle / busyを問わずオンラインなら
+     * Musicメニューを使用可能。
      */
-    const worker =
-        await findAvailableMusicWorker(
+    const workers =
+        await getOnlineMusicWorkers(
             kv,
             guildId,
         );
 
-    return Boolean(worker);
+    return workers.length > 0;
 }
 
 const { ephemeralOptions } = require('../utils/ephemeral');
@@ -44,8 +45,10 @@ const { getMusicPlayer } = require('../services/musicPlayer');
 
 const {
     findAvailableMusicWorker,
+    getOnlineMusicWorkers,
     setMusicWorkerStatus,
 } = require('../services/musicWorkerService');
+
 
 const {
     createMusicJob,
