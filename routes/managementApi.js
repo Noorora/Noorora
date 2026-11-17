@@ -1851,15 +1851,53 @@ const discordClient =
             }
 
             /*
-             * 前回のVoice接続情報を破棄する。
+ * Botが既に同じVCへ入っている場合、
+ * Discordから新しいVoice Server情報が
+ * 届かないことがある。
+ *
+ * 一度退出してから接続し直し、
+ * 新しいVoice Sessionを取得する。
+ */
+            guild.shard.send({
+                op:
+                    GatewayOpcodes.VoiceStateUpdate,
+
+                d: {
+                    guild_id:
+                        guildId,
+
+                    channel_id:
+                        null,
+
+                    self_mute:
+                        false,
+
+                    self_deaf:
+                        true,
+                },
+            });
+
+            /*
+             * 退出イベントを処理する時間を確保する。
+             */
+            await new Promise(
+                (resolve) => {
+                    setTimeout(
+                        resolve,
+                        1000,
+                    );
+                },
+            );
+
+            /*
+             * 退出後に古いVoice情報を破棄する。
              */
             clearRemoteVoiceSession(
                 guildId,
             );
 
             /*
-             * このGuildを担当するShardから、
-             * Discord GatewayへVoice State Updateを送る。
+             * 対象VCへ改めて参加する。
              */
             guild.shard.send({
                 op:
