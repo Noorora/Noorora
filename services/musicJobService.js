@@ -223,6 +223,28 @@ async function getGuildMusicJobs(
             continue;
         }
 
+        console.log(
+            '[music queue] inspecting job:',
+            {
+                jobId:
+                    job.jobId,
+                guildId:
+                    job.guildId,
+                guildIdType:
+                    typeof job.guildId,
+                requestedGuildId:
+                    guildId,
+                requestedGuildIdType:
+                    typeof guildId,
+                type:
+                    job.type,
+                status:
+                    job.status,
+                url:
+                    job.url,
+            },
+        );
+
         if (
             job.guildId !==
             guildId
