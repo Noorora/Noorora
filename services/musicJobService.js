@@ -197,6 +197,13 @@ async function getGuildMusicJobs(
             'music-job:*',
         );
 
+    console.log(
+        '[music queue] guildId:',
+        guildId,
+        'keys:',
+        keys,
+    );
+
     const jobs = [];
 
     for (const key of keys) {
@@ -243,6 +250,11 @@ async function getGuildMusicJobs(
         (a, b) =>
             a.createdAt -
             b.createdAt,
+    );
+
+    console.log(
+        '[music queue] matched jobs:',
+        jobs,
     );
 
     return jobs;
