@@ -328,6 +328,24 @@ async function findAvailableMusicWorker(
     );
 }
 
+async function findBusyMusicWorker(
+    kv,
+    guildId,
+) {
+    const workers =
+        await getOnlineMusicWorkers(
+            kv,
+            guildId,
+        );
+
+    return (
+        workers.find(
+            (worker) =>
+                worker.status === 'busy',
+        ) || null
+    );
+}
+
 async function unregisterMusicWorker(
     kv,
     workerId,
@@ -383,5 +401,6 @@ module.exports = {
     setMusicWorkerStatus,
     getOnlineMusicWorkers,
     findAvailableMusicWorker,
+    findBusyMusicWorker,
     unregisterMusicWorker,
 };

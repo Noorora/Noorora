@@ -45,6 +45,7 @@ const { getMusicPlayer } = require('../services/musicPlayer');
 
 const {
     findAvailableMusicWorker,
+    findBusyMusicWorker,
     getOnlineMusicWorkers,
     setMusicWorkerStatus,
 } = require('../services/musicWorkerService');
@@ -52,6 +53,7 @@ const {
 
 const {
     createMusicJob,
+    getGuildMusicJobs,
 } = require('../services/musicJobService');
 
 function musicDefaultVolumeKey(guildId) {
@@ -302,29 +304,48 @@ async function handleComponent(
             interaction.customId ===
             'music_menu_skip'
         ) {
-            const player =
-                getMusicPlayer(
+            const worker =
+                await findBusyMusicWorker(
+                    kv,
                     interaction.guildId,
                 );
 
-            const result =
-                player.skip();
-
-            if (result.ok) {
-                await addAuditLog(
-                    interaction,
-                    kv,
-                    'Music スキップ',
-                    result.message,
-                ).catch(
-                    () => null,
+            if (!worker) {
+                await interaction.reply(
+                    ephemeralOptions({
+                        content:
+                            '現在再生中のMusic Workerがありません。',
+                    }),
                 );
+
+                return true;
             }
+
+            await createMusicJob(
+                kv,
+                {
+                    workerId:
+                        worker.workerId,
+                    guildId:
+                        interaction.guildId,
+                    voiceChannelId:
+                        interaction.member?.voice?.channelId ||
+                        null,
+                    textChannelId:
+                        interaction.channelId,
+                    requestedById:
+                        interaction.user.id,
+                    url:
+                        null,
+                    type:
+                        'skip',
+                },
+            );
 
             await interaction.reply(
                 ephemeralOptions({
                     content:
-                        result.message,
+                        '⏭️ Music Workerへスキップ要求を送信しました。',
                 }),
             );
 
@@ -335,29 +356,48 @@ async function handleComponent(
             interaction.customId ===
             'music_menu_stop'
         ) {
-            const player =
-                getMusicPlayer(
+            const worker =
+                await findBusyMusicWorker(
+                    kv,
                     interaction.guildId,
                 );
 
-            const result =
-                player.stop();
-
-            if (result.ok) {
-                await addAuditLog(
-                    interaction,
-                    kv,
-                    'Music 停止',
-                    result.message,
-                ).catch(
-                    () => null,
+            if (!worker) {
+                await interaction.reply(
+                    ephemeralOptions({
+                        content:
+                            '現在再生中のMusic Workerがありません。',
+                    }),
                 );
+
+                return true;
             }
+
+            await createMusicJob(
+                kv,
+                {
+                    workerId:
+                        worker.workerId,
+                    guildId:
+                        interaction.guildId,
+                    voiceChannelId:
+                        interaction.member?.voice?.channelId ||
+                        null,
+                    textChannelId:
+                        interaction.channelId,
+                    requestedById:
+                        interaction.user.id,
+                    url:
+                        null,
+                    type:
+                        'stop',
+                },
+            );
 
             await interaction.reply(
                 ephemeralOptions({
                     content:
-                        result.message,
+                        '⏹️ Music Workerへ停止要求を送信しました。',
                 }),
             );
 
@@ -368,15 +408,85 @@ async function handleComponent(
             interaction.customId ===
             'music_menu_queue'
         ) {
-            const player =
-                getMusicPlayer(
+            const jobs =
+                await getGuildMusicJobs(
+                    kv,
                     interaction.guildId,
                 );
+
+            const currentJob =
+                jobs.find(
+                    (job) =>
+                        job.status === 'assigned',
+                );
+
+            const pendingJobs =
+                jobs.filter(
+                    (job) =>
+                        job.status === 'pending',
+                );
+
+            const lines = [
+                '## 📋 Music キュー',
+                '',
+                '### 再生中',
+            ];
+
+            if (currentJob) {
+                lines.push(
+                    `・${currentJob.url}`,
+                );
+
+                lines.push(
+                    `  リクエスト: <@${currentJob.requestedById}>`,
+                );
+            } else {
+                lines.push(
+                    '・なし',
+                );
+            }
+
+            lines.push(
+                '',
+                '### 待機中',
+            );
+
+            if (
+                pendingJobs.length === 0
+            ) {
+                lines.push(
+                    '・なし',
+                );
+            } else {
+                pendingJobs
+                    .slice(0, 10)
+                    .forEach(
+                        (job, index) => {
+                            lines.push(
+                                `${index + 1}. ${job.url}`,
+                            );
+
+                            lines.push(
+                                `   リクエスト: <@${job.requestedById}>`,
+                            );
+                        },
+                    );
+
+                if (
+                    pendingJobs.length >
+                    10
+                ) {
+                    lines.push(
+                        '',
+                        `ほか ${pendingJobs.length - 10} 件`,
+                    );
+                }
+            }
 
             await interaction.reply(
                 ephemeralOptions({
                     content:
-                        player.getQueueText(),
+                        lines.join('\n'),
                 }),
             );
 

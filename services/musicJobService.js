@@ -188,10 +188,71 @@ async function getMusicJob(
     }
 }
 
+async function getGuildMusicJobs(
+    kv,
+    guildId,
+) {
+    const keys =
+        await kv.keys(
+            'music-job:*',
+        );
+
+    const jobs = [];
+
+    for (const key of keys) {
+        const raw =
+            await kv.get(key);
+
+        if (!raw) {
+            continue;
+        }
+
+        let job;
+
+        try {
+            job =
+                JSON.parse(raw);
+        } catch {
+            continue;
+        }
+
+        if (
+            job.guildId !==
+            guildId
+        ) {
+            continue;
+        }
+
+        if (
+            job.type !== 'play'
+        ) {
+            continue;
+        }
+
+        if (
+            job.status !== 'pending' &&
+            job.status !== 'assigned'
+        ) {
+            continue;
+        }
+
+        jobs.push(job);
+    }
+
+    jobs.sort(
+        (a, b) =>
+            a.createdAt -
+            b.createdAt,
+    );
+
+    return jobs;
+}
+
 module.exports = {
     MUSIC_JOB_TTL_SECONDS,
     createMusicJob,
     takeNextMusicJob,
     updateMusicJobStatus,
     getMusicJob,
+    getGuildMusicJobs,
 };
