@@ -20,8 +20,10 @@ const {
     registerMusicWorker,
     heartbeatMusicWorker,
     getMusicWorker,
+    setMusicWorkerStatus,
     unregisterMusicWorker,
 } = require('../services/musicWorkerService');
+
 
 const {
     createMusicJob,
