@@ -242,34 +242,39 @@ async function handleSkip(
     interaction,
     kv,
 ) {
-    await interaction.deferReply({
-        flags:
-            MessageFlags.Ephemeral,
-    });
+    const guildId = interaction.guildId;
+
+    if (!guildId) {
+        await interaction.editReply(
+            'サーバー内で実行してください。',
+        );
+        return;
+    }
 
     const queue =
         await getGuildMusicQueue(
             kv,
-            interaction.guildId,
+            guildId,
         );
 
     if (!queue.current) {
-        await interaction.editReply({
-            content:
-                '現在再生中の曲はありません。',
-        });
-
-        return true;
+        await interaction.editReply(
+            '現在再生中の曲はありません。',
+        );
+        return;
     }
 
     /*
-     * currentに保存された古いWorker IDではなく、
-     * このGuildで現在稼働中のWorkerを取得する。
+     * current.workerIdだけを信用しない。
+     *
+     * Desktop再登録などでWorker IDが変わっている場合、
+     * 古いWorker用Redis Listへskipを送ると
+     * 現在のDesktopが永久に受信できない。
      */
     const workers =
         await getOnlineMusicWorkers(
             kv,
-            interaction.guildId,
+            guildId,
         );
 
     const worker =
@@ -286,75 +291,85 @@ async function handleSkip(
         null;
 
     if (!worker) {
-        await interaction.editReply({
-            content:
-                '現在、このサーバーで稼働中のMusic Workerが見つかりません。',
-        });
+        console.warn(
+            '[music-skip] online worker not found:',
+            {
+                guildId,
+                currentWorkerId:
+                    queue.current.workerId || null,
+            },
+        );
 
-        return true;
+        await interaction.editReply(
+            '再生を担当しているMusic Workerが見つかりません。',
+        );
+        return;
     }
 
-    const skipJob =
+    /*
+     * 現在onlineになっているWorkerへskipを送る。
+     */
+    const controlJob =
         await createMusicJob(
             kv,
             {
                 workerId:
                     worker.workerId,
 
-                guildId:
-                    interaction.guildId,
+                guildId,
 
                 voiceChannelId:
-                    queue.current.voiceChannelId,
+                    queue.current.voiceChannelId ||
+                    null,
 
                 textChannelId:
-                    interaction.channelId,
+                    queue.current.textChannelId ||
+                    interaction.channelId ||
+                    null,
 
                 requestedById:
                     interaction.user.id,
 
-                url:
-                    null,
+                url: null,
 
-                type:
-                    'skip',
+                type: 'skip',
             },
         );
 
     console.log(
         '[music-skip] control job created:',
         {
-            guildId:
-                interaction.guildId,
+            guildId,
 
-            workerId:
+            controlJobId:
+                controlJob.jobId,
+
+            targetWorkerId:
                 worker.workerId,
 
             currentWorkerId:
-                queue.current.workerId,
+                queue.current.workerId ||
+                null,
 
-            currentPlayJobId:
-                queue.current.jobId,
+            workerStatus:
+                worker.status ||
+                null,
 
-            skipJobId:
-                skipJob.jobId,
-
-            queuedCount:
-                queue.queued.length,
+            onlineWorkers:
+                workers.map(
+                    (item) => ({
+                        workerId:
+                            item.workerId,
+                        status:
+                            item.status,
+                    }),
+                ),
         },
     );
 
-    await interaction.editReply({
-        content:
-            '⏭️ 現在の曲をスキップします。' +
-            (
-                queue.queued.length > 0
-                    ? ' 次の曲へ進みます。'
-                    : ' 待機中の曲はありません。'
-            ),
-    });
-
-    return true;
+    await interaction.editReply(
+        '⏭️ スキップします。',
+    );
 }
 
 async function handleStop(
