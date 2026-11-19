@@ -2,6 +2,7 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
+    MessageFlags,
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle,
@@ -242,12 +243,20 @@ async function handleSkip(
     kv,
 ) {
     await interaction.deferReply({
-        ephemeral: true,
+        flags:
+            MessageFlags.Ephemeral,
     });
+
+    const queue =
+        await getGuildMusicQueue(
+            kv,
+            interaction.guildId,
+        );
 
     if (!queue.current) {
         await interaction.editReply({
-            content: '現在再生中の曲はありません。',
+            content:
+                '現在再生中の曲はありません。',
         });
 
         return true;
@@ -256,22 +265,37 @@ async function handleSkip(
     await createMusicJob(
         kv,
         {
-            workerId: queue.current.workerId,
-            guildId: interaction.guildId,
-            voiceChannelId: queue.current.voiceChannelId,
-            textChannelId: interaction.channelId,
-            requestedById: interaction.user.id,
-            url: null,
-            type: 'skip',
+            workerId:
+                queue.current.workerId,
+
+            guildId:
+                interaction.guildId,
+
+            voiceChannelId:
+                queue.current.voiceChannelId,
+
+            textChannelId:
+                interaction.channelId,
+
+            requestedById:
+                interaction.user.id,
+
+            url:
+                null,
+
+            type:
+                'skip',
         },
     );
 
     await interaction.editReply({
         content:
             '⏭️ 現在の曲をスキップします。' +
-            (queue.queued.length > 0
-                ? ' 次の曲へ進みます。'
-                : ''),
+            (
+                queue.queued.length > 0
+                    ? ' 次の曲へ進みます。'
+                    : ''
+            ),
     });
 
     return true;
@@ -282,10 +306,20 @@ async function handleStop(
     kv,
 ) {
     await interaction.deferReply({
-        ephemeral: true,
+        flags:
+            MessageFlags.Ephemeral,
     });
 
-    if (!cleared.current && cleared.queuedCount === 0) {
+    const cleared =
+        await clearGuildMusicQueue(
+            kv,
+            interaction.guildId,
+        );
+
+    if (
+        !cleared.current &&
+        cleared.queuedCount === 0
+    ) {
         await interaction.editReply({
             content:
                 '現在再生中の曲も待機中の曲もありません。',
@@ -298,34 +332,54 @@ async function handleStop(
         await createMusicJob(
             kv,
             {
-                workerId: cleared.current.workerId,
-                guildId: interaction.guildId,
+                workerId:
+                    cleared.current.workerId,
+
+                guildId:
+                    interaction.guildId,
+
                 voiceChannelId:
                     cleared.current.voiceChannelId,
-                textChannelId: interaction.channelId,
-                requestedById: interaction.user.id,
-                url: null,
-                type: 'stop',
+
+                textChannelId:
+                    interaction.channelId,
+
+                requestedById:
+                    interaction.user.id,
+
+                url:
+                    null,
+
+                type:
+                    'stop',
             },
         );
     }
 
     await interaction.editReply({
         content:
-            `⏹️ 再生を停止し、待機中の曲を ` +
+            '⏹️ 再生を停止し、待機中の曲を ' +
             `${cleared.queuedCount} 件削除しました。`,
     });
 
     return true;
 }
 
+
 async function handleQueue(
     interaction,
     kv,
 ) {
     await interaction.deferReply({
-        ephemeral: true,
+        flags:
+            MessageFlags.Ephemeral,
     });
+
+    const queue =
+        await getGuildMusicQueue(
+            kv,
+            interaction.guildId,
+        );
 
     const lines = [
         '## 📋 Music キュー',
@@ -335,29 +389,44 @@ async function handleQueue(
 
     if (queue.current) {
         lines.push(
-            ...formatTrackLine(queue.current),
+            ...formatTrackLine(
+                queue.current,
+            ),
         );
     } else {
-        lines.push('・なし');
+        lines.push(
+            '・なし',
+        );
     }
 
-    lines.push('', '### 待機中');
+    lines.push(
+        '',
+        '### 待機中',
+    );
 
-    if (queue.queued.length === 0) {
-        lines.push('・なし');
+    if (
+        queue.queued.length === 0
+    ) {
+        lines.push(
+            '・なし',
+        );
     } else {
         queue.queued
             .slice(0, 10)
-            .forEach((track, index) => {
-                lines.push(
-                    ...formatTrackLine(
-                        track,
-                        index + 1,
-                    ),
-                );
-            });
+            .forEach(
+                (track, index) => {
+                    lines.push(
+                        ...formatTrackLine(
+                            track,
+                            index + 1,
+                        ),
+                    );
+                },
+            );
 
-        if (queue.queued.length > 10) {
+        if (
+            queue.queued.length > 10
+        ) {
             lines.push(
                 '',
                 `ほか ${queue.queued.length - 10} 件`,
@@ -366,7 +435,8 @@ async function handleQueue(
     }
 
     await interaction.editReply({
-        content: lines.join('\n'),
+        content:
+            lines.join('\n'),
     });
 
     return true;
