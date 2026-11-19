@@ -2294,6 +2294,22 @@ router.post(
                 return;
             }
 
+            console.log(
+                '[remote-voice] gateway payload from worker:',
+                {
+                    bridgeId:
+                        bridge.bridgeId,
+                    workerId:
+                        bridge.workerId,
+                    guildId:
+                        bridge.guildId,
+                    op:
+                        payload.op,
+                    channelId:
+                        payload.d?.channel_id ?? null,
+                },
+            );
+
             guild.shard.send(
                 payload,
             );
