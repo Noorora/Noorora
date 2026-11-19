@@ -1969,102 +1969,110 @@ const discordClient =
             }
 
             /*
- * Botが既に同じVCへ入っている場合、
- * Discordから新しいVoice Server情報が
- * 届かないことがある。
+ * Botがすでに要求されたVCへ接続済みで、
+ * 既存のRemote Voice Sessionも利用可能なら、
+ * Voice Stateを変更せず既存接続を再利用する。
  *
- * 一度退出してから接続し直し、
- * 新しいVoice Sessionを取得する。
+ * 曲の切り替えだけで
+ * channel_id: null
+ * を送ってVCから退出させない。
  */
-guild.shard.send({
-    op:
-        GatewayOpcodes.VoiceStateUpdate,
-
-    d: {
-        guild_id:
-            guildId,
-
-        channel_id:
-            null,
-
-        self_mute:
-            false,
-
-        self_deaf:
-            true,
-    },
-});
-
-/*
- * 退出イベントを処理する時間を確保する。
- */
-await new Promise(
-    (resolve) => {
-        setTimeout(
-            resolve,
-            1000,
-        );
-    },
-);
-
-/*
- * 退出後に古いVoice情報を破棄する。
- */
-clearRemoteVoiceSession(
-    guildId,
-);
-
-/*
- * 対象VCへ改めて参加する。
- */
-guild.shard.send({
-    op:
-        GatewayOpcodes.VoiceStateUpdate,
-
-    d: {
-        guild_id:
-            guildId,
-
-        channel_id:
-            voiceChannelId,
-
-        self_mute:
-            false,
-
-        self_deaf:
-            true,
-    },
-});
-
-            /*
-             * VOICE_STATE_UPDATEと
-             * VOICE_SERVER_UPDATEが揃うまで、
-             * 最大8秒待つ。
-             */
-            let remoteSession =
+            const currentVoiceChannelId =
+                guild.members.me?.voice?.channelId ||
                 null;
 
-            for (
-                let attempt = 0;
-                attempt < 150;
-                attempt += 1
-            ) {
-                await new Promise(
-                    (resolve) => {
-                        setTimeout(
-                            resolve,
-                            200,
-                        );
+            const existingRemoteSession =
+                getRemoteVoiceSession(
+                    guildId,
+                );
+
+            const canReuseVoiceSession =
+                currentVoiceChannelId ===
+                voiceChannelId &&
+                existingRemoteSession?.ready === true;
+
+            let remoteSession = null;
+
+            if (canReuseVoiceSession) {
+                console.log(
+                    '[remote-voice] reuse existing voice session:',
+                    {
+                        guildId,
+                        voiceChannelId,
+                        workerId,
                     },
                 );
 
                 remoteSession =
-                    getRemoteVoiceSession(
+                    existingRemoteSession;
+            } else {
+                console.log(
+                    '[remote-voice] create new voice session:',
+                    {
                         guildId,
+                        currentVoiceChannelId,
+                        requestedVoiceChannelId:
+                            voiceChannelId,
+                        workerId,
+                    },
+                );
+
+                /*
+                 * 別VCへ移動する場合、または
+                 * 有効なVoice Sessionが存在しない場合だけ、
+                 * 古いVoice Sessionを破棄する。
+                 */
+                clearRemoteVoiceSession(
+                    guildId,
+                );
+
+                /*
+                 * 要求されたVCへ接続する。
+                 *
+                 * ここでは一度 channel_id:null を
+                 * 送る必要はない。
+                 */
+                guild.shard.send({
+                    op:
+                        GatewayOpcodes.VoiceStateUpdate,
+                    d: {
+                        guild_id:
+                            guildId,
+                        channel_id:
+                            voiceChannelId,
+                        self_mute:
+                            false,
+                        self_deaf:
+                            true,
+                    },
+                });
+
+                /*
+                 * VOICE_STATE_UPDATEと
+                 * VOICE_SERVER_UPDATEが揃うまで待つ。
+                 */
+                for (
+                    let attempt = 0;
+                    attempt < 150;
+                    attempt += 1
+                ) {
+                    await new Promise(
+                        (resolve) => {
+                            setTimeout(
+                                resolve,
+                                200,
+                            );
+                        },
                     );
 
-                if (remoteSession?.ready) {
-                    break;
+                    remoteSession =
+                        getRemoteVoiceSession(
+                            guildId,
+                        );
+
+                    if (remoteSession?.ready) {
+                        break;
+                    }
                 }
             }
 
