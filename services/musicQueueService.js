@@ -151,11 +151,28 @@ async function dispatchNextMusicTrackUnlocked(
     );
 
     if (existingCurrent) {
-        return {
-            started: false,
-            current: existingCurrent,
-        };
+        const currentWorker =
+            await getMusicWorker(
+                kv,
+                existingCurrent.workerId,
+            );
+
+        if (
+            currentWorker &&
+            currentWorker.status === 'busy'
+        ) {
+            return {
+                started: false,
+                current: existingCurrent,
+            };
+        }
+
+        // currentだけ残った孤児状態
+        await kv.del(
+            musicCurrentKey(guildId),
+        );
     }
+
 
     const queueKey = musicQueueKey(guildId);
     let track = null;
