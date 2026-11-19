@@ -237,18 +237,18 @@ async function execute(interaction, context) {
     );
 }
 
-async function handleSkip(interaction, kv) {
-    const queue = await getGuildMusicQueue(
-        kv,
-        interaction.guildId,
-    );
+async function handleSkip(
+    interaction,
+    kv,
+) {
+    await interaction.deferReply({
+        ephemeral: true,
+    });
 
     if (!queue.current) {
-        await interaction.reply(
-            ephemeralOptions({
-                content: '現在再生中の曲はありません。',
-            }),
-        );
+        await interaction.editReply({
+            content: '現在再生中の曲はありません。',
+        });
 
         return true;
     }
@@ -266,32 +266,30 @@ async function handleSkip(interaction, kv) {
         },
     );
 
-    await interaction.reply(
-        ephemeralOptions({
-            content:
-                '⏭️ 現在の曲をスキップします。' +
-                (queue.queued.length > 0
-                    ? ' 次の曲へ進みます。'
-                    : ''),
-        }),
-    );
+    await interaction.editReply({
+        content:
+            '⏭️ 現在の曲をスキップします。' +
+            (queue.queued.length > 0
+                ? ' 次の曲へ進みます。'
+                : ''),
+    });
 
     return true;
 }
 
-async function handleStop(interaction, kv) {
-    const cleared = await clearGuildMusicQueue(
-        kv,
-        interaction.guildId,
-    );
+async function handleStop(
+    interaction,
+    kv,
+) {
+    await interaction.deferReply({
+        ephemeral: true,
+    });
 
     if (!cleared.current && cleared.queuedCount === 0) {
-        await interaction.reply(
-            ephemeralOptions({
-                content:
-                    '現在再生中の曲も待機中の曲もありません。',
-            }),
-        );
+        await interaction.editReply({
+            content:
+                '現在再生中の曲も待機中の曲もありません。',
+        });
 
         return true;
     }
@@ -312,22 +310,22 @@ async function handleStop(interaction, kv) {
         );
     }
 
-    await interaction.reply(
-        ephemeralOptions({
-            content:
-                `⏹️ 再生を停止し、待機中の曲を ` +
-                `${cleared.queuedCount} 件削除しました。`,
-        }),
-    );
+    await interaction.editReply({
+        content:
+            `⏹️ 再生を停止し、待機中の曲を ` +
+            `${cleared.queuedCount} 件削除しました。`,
+    });
 
     return true;
 }
 
-async function handleQueue(interaction, kv) {
-    const queue = await getGuildMusicQueue(
-        kv,
-        interaction.guildId,
-    );
+async function handleQueue(
+    interaction,
+    kv,
+) {
+    await interaction.deferReply({
+        ephemeral: true,
+    });
 
     const lines = [
         '## 📋 Music キュー',
@@ -367,11 +365,9 @@ async function handleQueue(interaction, kv) {
         }
     }
 
-    await interaction.reply(
-        ephemeralOptions({
-            content: lines.join('\n'),
-        }),
-    );
+    await interaction.editReply({
+        content: lines.join('\n'),
+    });
 
     return true;
 }
