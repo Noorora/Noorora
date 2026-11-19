@@ -262,6 +262,10 @@ async function handleSkip(
         return true;
     }
 
+    /*
+     * currentに保存された古いWorker IDではなく、
+     * このGuildで現在稼働中のWorkerを取得する。
+     */
     const workers =
         await getOnlineMusicWorkers(
             kv,
@@ -325,6 +329,9 @@ async function handleSkip(
 
             workerId:
                 worker.workerId,
+
+            currentWorkerId:
+                queue.current.workerId,
 
             currentPlayJobId:
                 queue.current.jobId,
