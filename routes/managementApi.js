@@ -1316,6 +1316,27 @@ router.get(
                     workerId,
                 );
 
+            /*
+             * Jobを実際に取り出した時だけログを出す。
+             * waitingのpollingは大量になるので出さない。
+             */
+            if (job) {
+                console.log(
+                    '[music-job-poll] assigned:',
+                    {
+                        workerId,
+                        jobId:
+                            job.jobId,
+                        type:
+                            job.type,
+                        guildId:
+                            job.guildId,
+                        jobWorkerId:
+                            job.workerId || null,
+                    },
+                );
+            }
+
             await refreshManagementSession(
                 kv,
                 loginId,
