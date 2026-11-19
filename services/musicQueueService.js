@@ -8,6 +8,7 @@ const {
 
 const {
     createMusicJob,
+    getMusicJob,
 } = require('./musicJobService');
 
 const {
@@ -151,23 +152,61 @@ async function dispatchNextMusicTrackUnlocked(
     );
 
     if (existingCurrent) {
-        const currentWorker =
-            await getMusicWorker(
-                kv,
-                existingCurrent.workerId,
+        const [currentWorker, currentJob] =
+            await Promise.all([
+                getMusicWorker(
+                    kv,
+                    existingCurrent.workerId,
+                ),
+                existingCurrent.jobId
+                    ? getMusicJob(
+                        kv,
+                        existingCurrent.jobId,
+                    )
+                    : null,
+            ]);
+
+        const activeJobStatuses =
+            new Set([
+                'pending',
+                'assigned',
+                'received',
+                'preparing',
+                'playing',
+            ]);
+
+        const currentIsActive =
+            Boolean(currentWorker) &&
+            currentWorker.guildId === guildId &&
+            currentWorker.status === 'busy' &&
+            Boolean(currentJob) &&
+            currentJob.type === 'play' &&
+            activeJobStatuses.has(
+                currentJob.status,
             );
 
-        if (
-            currentWorker &&
-            currentWorker.status === 'busy'
-        ) {
+        if (currentIsActive) {
             return {
                 started: false,
                 current: existingCurrent,
             };
         }
 
-        // currentだけ残った孤児状態
+        console.warn(
+            '[music-queue] stale current removed:',
+            {
+                guildId,
+                workerId:
+                    existingCurrent.workerId,
+                jobId:
+                    existingCurrent.jobId,
+                workerStatus:
+                    currentWorker?.status || null,
+                jobStatus:
+                    currentJob?.status || null,
+            },
+        );
+
         await kv.del(
             musicCurrentKey(guildId),
         );
