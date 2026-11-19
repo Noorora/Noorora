@@ -475,30 +475,93 @@ async function finishCurrentMusicTrack(
              * 次曲がある場合は同じVoice接続を維持したままplayを送る。
              */
             if (!nextResult.started) {
-                const disconnectWorkerId =
-                    current?.workerId || workerId;
-
-                if (disconnectWorkerId) {
-                    await createMusicJob(
+                /*
+                 * started === false だけでは
+                 * 「キューが空」とは限らない。
+                 *
+                 * Redis上の待機キューを改めて確認する。
+                 */
+                const remainingTracks =
+                    await getQueuedMusicTracks(
                         kv,
+                        guildId,
+                    );
+
+                /*
+                 * 本当に待機曲が0件のときだけ
+                 * Discord Voiceから退室させる。
+                 */
+                if (
+                    remainingTracks.length === 0
+                ) {
+                    const disconnectWorkerId =
+                        current?.workerId ||
+                        workerId;
+
+                    if (disconnectWorkerId) {
+                        await createMusicJob(
+                            kv,
+                            {
+                                workerId:
+                                    disconnectWorkerId,
+
+                                guildId,
+
+                                voiceChannelId:
+                                    current?.voiceChannelId ||
+                                    null,
+
+                                textChannelId:
+                                    current?.textChannelId ||
+                                    null,
+
+                                requestedById:
+                                    current?.requestedById ||
+                                    null,
+
+                                url:
+                                    null,
+
+                                type:
+                                    'disconnect',
+                            },
+                        );
+
+                        console.log(
+                            '[music-queue] ' +
+                            'queue empty -> disconnect:',
+                            {
+                                guildId,
+
+                                workerId:
+                                    disconnectWorkerId,
+                            },
+                        );
+                    }
+                }
+                else {
+                    /*
+                     * 待機曲が残っているなら
+                     * VCは絶対に切断しない。
+                     */
+                    console.log(
+                        '[music-queue] ' +
+                        'tracks remain -> keep voice connected:',
                         {
-                            workerId:
-                                disconnectWorkerId,
                             guildId,
-                            voiceChannelId:
-                                current?.voiceChannelId || null,
-                            textChannelId:
-                                current?.textChannelId || null,
-                            requestedById:
-                                current?.requestedById || null,
-                            url:
+
+                            remaining:
+                                remainingTracks.length,
+
+                            reason:
+                                nextResult.reason ||
                                 null,
-                            type:
-                                'disconnect',
                         },
                     );
                 }
             }
+
+            return nextResult;
 
             return nextResult;
         },

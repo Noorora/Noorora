@@ -262,29 +262,78 @@ async function handleSkip(
         return true;
     }
 
-    await createMusicJob(
-        kv,
-        {
-            workerId:
-                queue.current.workerId,
+    const workers =
+        await getOnlineMusicWorkers(
+            kv,
+            interaction.guildId,
+        );
 
+    const worker =
+        workers.find(
+            (item) =>
+                item.status === 'busy',
+        ) ||
+        workers.find(
+            (item) =>
+                item.workerId ===
+                queue.current.workerId,
+        ) ||
+        workers[0] ||
+        null;
+
+    if (!worker) {
+        await interaction.editReply({
+            content:
+                '現在、このサーバーで稼働中のMusic Workerが見つかりません。',
+        });
+
+        return true;
+    }
+
+    const skipJob =
+        await createMusicJob(
+            kv,
+            {
+                workerId:
+                    worker.workerId,
+
+                guildId:
+                    interaction.guildId,
+
+                voiceChannelId:
+                    queue.current.voiceChannelId,
+
+                textChannelId:
+                    interaction.channelId,
+
+                requestedById:
+                    interaction.user.id,
+
+                url:
+                    null,
+
+                type:
+                    'skip',
+            },
+        );
+
+    console.log(
+        '[music-skip] control job created:',
+        {
             guildId:
                 interaction.guildId,
 
-            voiceChannelId:
-                queue.current.voiceChannelId,
+            workerId:
+                worker.workerId,
 
-            textChannelId:
-                interaction.channelId,
+            currentPlayJobId:
+                queue.current.jobId,
 
-            requestedById:
-                interaction.user.id,
+            skipJobId:
+                skipJob.jobId,
 
-            url:
-                null,
-
-            type:
-                'skip',
+            queuedCount:
+                queue.queued.length,
         },
     );
 
@@ -294,7 +343,7 @@ async function handleSkip(
             (
                 queue.queued.length > 0
                     ? ' 次の曲へ進みます。'
-                    : ''
+                    : ' 待機中の曲はありません。'
             ),
     });
 
@@ -309,6 +358,23 @@ async function handleStop(
         flags:
             MessageFlags.Ephemeral,
     });
+
+    /*
+     * キューを消す前に、現在稼働中のWorkerを確定する。
+     */
+    const workers =
+        await getOnlineMusicWorkers(
+            kv,
+            interaction.guildId,
+        );
+
+    const worker =
+        workers.find(
+            (item) =>
+                item.status === 'busy',
+        ) ||
+        workers[0] ||
+        null;
 
     const cleared =
         await clearGuildMusicQueue(
@@ -328,30 +394,63 @@ async function handleStop(
         return true;
     }
 
-    if (cleared.current) {
-        await createMusicJob(
-            kv,
-            {
-                workerId:
-                    cleared.current.workerId,
+    /*
+     * busy Workerが見つからない場合だけ、
+     * clear前のcurrentに記録されたWorkerを使う。
+     */
+    const targetWorkerId =
+        worker?.workerId ||
+        cleared.current?.workerId ||
+        null;
 
+    if (
+        cleared.current &&
+        targetWorkerId
+    ) {
+        const stopJob =
+            await createMusicJob(
+                kv,
+                {
+                    workerId:
+                        targetWorkerId,
+
+                    guildId:
+                        interaction.guildId,
+
+                    voiceChannelId:
+                        cleared.current.voiceChannelId,
+
+                    textChannelId:
+                        interaction.channelId,
+
+                    requestedById:
+                        interaction.user.id,
+
+                    url:
+                        null,
+
+                    type:
+                        'stop',
+                },
+            );
+
+        console.log(
+            '[music-stop] control job created:',
+            {
                 guildId:
                     interaction.guildId,
 
-                voiceChannelId:
-                    cleared.current.voiceChannelId,
+                workerId:
+                    targetWorkerId,
 
-                textChannelId:
-                    interaction.channelId,
+                currentPlayJobId:
+                    cleared.current.jobId,
 
-                requestedById:
-                    interaction.user.id,
+                stopJobId:
+                    stopJob.jobId,
 
-                url:
-                    null,
-
-                type:
-                    'stop',
+                removedQueuedCount:
+                    cleared.queuedCount,
             },
         );
     }
