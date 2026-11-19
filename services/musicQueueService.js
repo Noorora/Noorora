@@ -449,119 +449,208 @@ async function finishCurrentMusicTrack(
         kv,
         guildId,
         async () => {
-            const current = await getCurrentMusicTrack(
-                kv,
-                guildId,
-            );
-
-            if (
-                current &&
-                current.jobId === jobId
-            ) {
-                await kv.del(
-                    musicCurrentKey(guildId),
+            const current =
+                await getCurrentMusicTrack(
+                    kv,
+                    guildId,
                 );
+
+            /*
+             * 現在曲が存在しない場合。
+             *
+             * 同じ完了通知が複数回来た可能性があるため、
+             * 次曲配送やdisconnectは行わない。
+             */
+            if (!current) {
+                console.warn(
+                    '[music-queue] ' +
+                    'finish ignored - no current track:',
+                    {
+                        guildId,
+                        jobId,
+                        workerId,
+                    },
+                );
+
+                return {
+                    started: false,
+                    current: null,
+                    ignored: true,
+                    reason: 'current_not_found',
+                };
             }
 
+            /*
+             * 完了通知のjobIdと現在曲のjobIdが違う場合。
+             *
+             * 古い曲の重複完了通知である可能性が高い。
+             * 現在再生中の曲を保護するため、
+             * 次曲配送もdisconnectも行わない。
+             */
+            if (
+                !jobId ||
+                current.jobId !== jobId
+            ) {
+                console.warn(
+                    '[music-queue] ' +
+                    'stale finish ignored:',
+                    {
+                        guildId,
+                        receivedJobId:
+                            jobId || null,
+                        currentJobId:
+                            current.jobId || null,
+                        receivedWorkerId:
+                            workerId || null,
+                        currentWorkerId:
+                            current.workerId || null,
+                    },
+                );
+
+                return {
+                    started: false,
+                    current,
+                    ignored: true,
+                    reason: 'job_mismatch',
+                };
+            }
+
+            /*
+             * このWorkerが担当している現在曲だけを
+             * 完了扱いにする。
+             */
+            if (
+                workerId &&
+                current.workerId &&
+                current.workerId !== workerId
+            ) {
+                console.warn(
+                    '[music-queue] ' +
+                    'finish ignored - worker mismatch:',
+                    {
+                        guildId,
+                        jobId,
+                        receivedWorkerId:
+                            workerId,
+                        currentWorkerId:
+                            current.workerId,
+                    },
+                );
+
+                return {
+                    started: false,
+                    current,
+                    ignored: true,
+                    reason: 'worker_mismatch',
+                };
+            }
+
+            /*
+             * 正しい現在曲の完了通知なので削除する。
+             */
+            await kv.del(
+                musicCurrentKey(guildId),
+            );
+
+            /*
+             * 同じWorkerを優先して次曲を配送する。
+             * 次曲がある場合、VC接続は維持する。
+             */
             const nextResult =
                 await dispatchNextMusicTrackUnlocked(
                     kv,
                     guildId,
-                    current?.workerId || workerId,
+                    current.workerId || workerId,
                 );
 
-            /*
-             * 次曲が無い場合だけ常駐Voice Workerへdisconnectを送る。
-             * 次曲がある場合は同じVoice接続を維持したままplayを送る。
-             */
-            if (!nextResult.started) {
-                /*
-                 * started === false だけでは
-                 * 「キューが空」とは限らない。
-                 *
-                 * Redis上の待機キューを改めて確認する。
-                 */
-                const remainingTracks =
-                    await getQueuedMusicTracks(
-                        kv,
+            if (nextResult.started) {
+                console.log(
+                    '[music-queue] ' +
+                    'next track dispatched - keep voice connected:',
+                    {
                         guildId,
-                    );
+                        previousJobId:
+                            jobId,
+                        nextJobId:
+                            nextResult.job?.jobId ||
+                            null,
+                        workerId:
+                            nextResult.current
+                                ?.workerId ||
+                            current.workerId ||
+                            workerId ||
+                            null,
+                    },
+                );
 
-                /*
-                 * 本当に待機曲が0件のときだけ
-                 * Discord Voiceから退室させる。
-                 */
-                if (
-                    remainingTracks.length === 0
-                ) {
-                    const disconnectWorkerId =
-                        current?.workerId ||
-                        workerId;
-
-                    if (disconnectWorkerId) {
-                        await createMusicJob(
-                            kv,
-                            {
-                                workerId:
-                                    disconnectWorkerId,
-
-                                guildId,
-
-                                voiceChannelId:
-                                    current?.voiceChannelId ||
-                                    null,
-
-                                textChannelId:
-                                    current?.textChannelId ||
-                                    null,
-
-                                requestedById:
-                                    current?.requestedById ||
-                                    null,
-
-                                url:
-                                    null,
-
-                                type:
-                                    'disconnect',
-                            },
-                        );
-
-                        console.log(
-                            '[music-queue] ' +
-                            'queue empty -> disconnect:',
-                            {
-                                guildId,
-
-                                workerId:
-                                    disconnectWorkerId,
-                            },
-                        );
-                    }
-                }
-                else {
-                    /*
-                     * 待機曲が残っているなら
-                     * VCは絶対に切断しない。
-                     */
-                    console.log(
-                        '[music-queue] ' +
-                        'tracks remain -> keep voice connected:',
-                        {
-                            guildId,
-
-                            remaining:
-                                remainingTracks.length,
-
-                            reason:
-                                nextResult.reason ||
-                                null,
-                        },
-                    );
-                }
+                return nextResult;
             }
 
-            return nextResult;
+            /*
+             * started === falseでも、何らかの理由で
+             * 待機曲が残っている可能性がある。
+             */
+            const remainingTracks =
+                await getQueuedMusicTracks(
+                    kv,
+                    guildId,
+                );
+
+            if (remainingTracks.length > 0) {
+                console.log(
+                    '[music-queue] ' +
+                    'tracks remain - keep voice connected:',
+                    {
+                        guildId,
+                        remaining:
+                            remainingTracks.length,
+                        reason:
+                            nextResult.reason || null,
+                    },
+                );
+
+                return nextResult;
+            }
+
+            /*
+             * 正しい現在曲が終了し、
+             * 次曲も待機曲も本当に存在しない場合だけ
+             * VCから退出させる。
+             */
+            const disconnectWorkerId =
+                current.workerId || workerId;
+
+            if (disconnectWorkerId) {
+                await createMusicJob(
+                    kv,
+                    {
+                        workerId:
+                            disconnectWorkerId,
+                        guildId,
+                        voiceChannelId:
+                            current.voiceChannelId ||
+                            null,
+                        textChannelId:
+                            current.textChannelId ||
+                            null,
+                        requestedById:
+                            current.requestedById ||
+                            null,
+                        url: null,
+                        type: 'disconnect',
+                    },
+                );
+
+                console.log(
+                    '[music-queue] ' +
+                    'queue empty - disconnect:',
+                    {
+                        guildId,
+                        workerId:
+                            disconnectWorkerId,
+                    },
+                );
+            }
 
             return nextResult;
         },
