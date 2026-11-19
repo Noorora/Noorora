@@ -242,6 +242,10 @@ async function handleSkip(
     interaction,
     kv,
 ) {
+    await interaction.deferReply({
+        ephemeral: true,
+    });
+
     const guildId = interaction.guildId;
 
     if (!guildId) {
