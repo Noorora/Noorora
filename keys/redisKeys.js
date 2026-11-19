@@ -82,6 +82,19 @@ function musicGuildWorkersKey(guildId) {
     return `music-workers:guild:${guildId}`;
 }
 
+
+function musicQueueKey(guildId) {
+    return `music-queue:${guildId}`;
+}
+
+function musicCurrentKey(guildId) {
+    return `music-current:${guildId}`;
+}
+
+function musicQueueLockKey(guildId) {
+    return `music-queue-lock:${guildId}`;
+}
+
 function musicDesktopWorkerKey(
     desktopId,
     guildId,
@@ -113,4 +126,7 @@ module.exports = {
 
     musicWorkerJobsKey,
     musicJobKey,
+    musicQueueKey,
+    musicCurrentKey,
+    musicQueueLockKey,
 };

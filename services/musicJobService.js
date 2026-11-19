@@ -5,13 +5,11 @@ const {
     musicJobKey,
 } = require('../keys/redisKeys');
 
-const MUSIC_JOB_TTL_SECONDS =
-    5 * 60;
+/* 長い曲でも完了通知までJob本体を保持する。 */
+const MUSIC_JOB_TTL_SECONDS = 6 * 60 * 60;
 
 function createMusicJobId() {
-    return crypto
-        .randomBytes(32)
-        .toString('hex');
+    return crypto.randomBytes(32).toString('hex');
 }
 
 async function createMusicJob(
@@ -27,9 +25,7 @@ async function createMusicJob(
         type = 'play',
     },
 ) {
-    const jobId =
-        createMusicJobId();
-
+    const jobId = createMusicJobId();
     const job = {
         jobId,
         workerId,
@@ -53,18 +49,11 @@ async function createMusicJob(
         },
     );
 
-    /*
-     * Workerごとの待機キュー。
-     * rPushしてlPopするためFIFOになる。
-     */
     await kv.rPush(
         musicWorkerJobsKey(workerId),
         jobId,
     );
 
-    /*
-     * キュー自体も古い状態で残さない。
-     */
     await kv.expire(
         musicWorkerJobsKey(workerId),
         MUSIC_JOB_TTL_SECONDS,
@@ -73,29 +62,20 @@ async function createMusicJob(
     return job;
 }
 
-async function takeNextMusicJob(
-    kv,
-    workerId,
-) {
+async function takeNextMusicJob(kv, workerId) {
     while (true) {
-        const jobId =
-            await kv.lPop(
-                musicWorkerJobsKey(workerId),
-            );
+        const jobId = await kv.lPop(
+            musicWorkerJobsKey(workerId),
+        );
 
         if (!jobId) {
             return null;
         }
 
-        const raw =
-            await kv.get(
-                musicJobKey(jobId),
-            );
+        const raw = await kv.get(
+            musicJobKey(jobId),
+        );
 
-        /*
-         * TTL切れなどで本体が無ければ、
-         * 次のジョブを確認する。
-         */
         if (!raw) {
             continue;
         }
@@ -103,13 +83,11 @@ async function takeNextMusicJob(
         let job;
 
         try {
-            job =
-                JSON.parse(raw);
+            job = JSON.parse(raw);
         } catch {
             await kv.del(
                 musicJobKey(jobId),
             );
-
             continue;
         }
 
@@ -134,11 +112,8 @@ async function updateMusicJobStatus(
     status,
     detail = null,
 ) {
-    const key =
-        musicJobKey(jobId);
-
-    const raw =
-        await kv.get(key);
+    const key = musicJobKey(jobId);
+    const raw = await kv.get(key);
 
     if (!raw) {
         return null;
@@ -147,8 +122,7 @@ async function updateMusicJobStatus(
     let job;
 
     try {
-        job =
-            JSON.parse(raw);
+        job = JSON.parse(raw);
     } catch {
         return null;
     }
@@ -168,14 +142,10 @@ async function updateMusicJobStatus(
     return job;
 }
 
-async function getMusicJob(
-    kv,
-    jobId,
-) {
-    const raw =
-        await kv.get(
-            musicJobKey(jobId),
-        );
+async function getMusicJob(kv, jobId) {
+    const raw = await kv.get(
+        musicJobKey(jobId),
+    );
 
     if (!raw) {
         return null;
@@ -188,105 +158,10 @@ async function getMusicJob(
     }
 }
 
-async function getGuildMusicJobs(
-    kv,
-    guildId,
-) {
-    const keys =
-        await kv.keys(
-            'music-job:*',
-        );
-
-    console.log(
-        '[music queue] guildId:',
-        guildId,
-        'keys:',
-        keys,
-    );
-
-    const jobs = [];
-
-    for (const key of keys) {
-        const raw =
-            await kv.get(key);
-
-        if (!raw) {
-            continue;
-        }
-
-        let job;
-
-        try {
-            job =
-                JSON.parse(raw);
-        } catch {
-            continue;
-        }
-
-        console.log(
-            '[music queue] inspecting job:',
-            {
-                jobId:
-                    job.jobId,
-                guildId:
-                    job.guildId,
-                guildIdType:
-                    typeof job.guildId,
-                requestedGuildId:
-                    guildId,
-                requestedGuildIdType:
-                    typeof guildId,
-                type:
-                    job.type,
-                status:
-                    job.status,
-                url:
-                    job.url,
-            },
-        );
-
-        if (
-            job.guildId !==
-            guildId
-        ) {
-            continue;
-        }
-
-        if (
-            job.type !== 'play'
-        ) {
-            continue;
-        }
-
-        if (
-            job.status !== 'pending' &&
-            job.status !== 'assigned'
-        ) {
-            continue;
-        }
-
-        jobs.push(job);
-    }
-
-    jobs.sort(
-        (a, b) =>
-            a.createdAt -
-            b.createdAt,
-    );
-
-    console.log(
-        '[music queue] matched jobs:',
-        jobs,
-    );
-
-    return jobs;
-}
-
 module.exports = {
     MUSIC_JOB_TTL_SECONDS,
     createMusicJob,
     takeNextMusicJob,
     updateMusicJobStatus,
     getMusicJob,
-    getGuildMusicJobs,
 };

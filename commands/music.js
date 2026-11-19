@@ -7,54 +7,64 @@ const {
     TextInputStyle,
 } = require('discord.js');
 
-function isMusicEnabled() {
-    return (
-        process.env.MUSIC_ENABLED ===
-        'true'
-    );
-}
-
-async function canUseMusic(
-    kv,
-    guildId,
-) {
-    /*
-     * 従来PC版が有効なら使用可能。
-     */
-    if (isMusicEnabled()) {
-        return true;
-    }
-
-    /*
-     * Desktop Workerは、
-     * idle / busyを問わずオンラインなら
-     * Musicメニューを使用可能。
-     */
-    const workers =
-        await getOnlineMusicWorkers(
-            kv,
-            guildId,
-        );
-
-    return workers.length > 0;
-}
-
-const { ephemeralOptions } = require('../utils/ephemeral');
-const { addAuditLog } = require('../utils/auditLog');
-const { getMusicPlayer } = require('../services/musicPlayer');
+const {
+    ephemeralOptions,
+} = require('../utils/ephemeral');
 
 const {
-    findAvailableMusicWorker,
-    findBusyMusicWorker,
-    getOnlineMusicWorkers,
-    setMusicWorkerStatus,
-} = require('../services/musicWorkerService');
+    addAuditLog,
+} = require('../utils/auditLog');
 
+const {
+    getOnlineMusicWorkers,
+} = require('../services/musicWorkerService');
 
 const {
     createMusicJob,
-    getGuildMusicJobs,
 } = require('../services/musicJobService');
+
+const {
+    enqueueMusicTrack,
+    getGuildMusicQueue,
+    clearGuildMusicQueue,
+} = require('../services/musicQueueService');
+
+const allowedMusicHosts = new Set([
+    'www.nicovideo.jp',
+    'nico.ms',
+    'sp.nicovideo.jp',
+    'www.youtube.com',
+    'youtube.com',
+    'm.youtube.com',
+    'music.youtube.com',
+    'youtu.be',
+]);
+
+function isAllowedMusicUrl(url) {
+    if (!/^https?:\/\//i.test(url)) {
+        return false;
+    }
+
+    try {
+        const parsedUrl = new URL(url);
+        const hostname = parsedUrl.hostname
+            .toLowerCase()
+            .replace(/\.$/, '');
+
+        return allowedMusicHosts.has(hostname);
+    } catch {
+        return false;
+    }
+}
+
+async function canUseMusic(kv, guildId) {
+    const workers = await getOnlineMusicWorkers(
+        kv,
+        guildId,
+    );
+
+    return workers.length > 0;
+}
 
 function musicDefaultVolumeKey(guildId) {
     return `music-option:default-volume:${guildId}`;
@@ -72,15 +82,12 @@ async function getDefaultVolume(kv, guildId) {
     const value = Number(raw);
 
     if (!Number.isFinite(value)) {
-        return 0.45;
+        return 0.2;
     }
 
     return Math.min(
         2,
-        Math.max(
-            0.05,
-            value,
-        ),
+        Math.max(0.05, value),
     );
 }
 
@@ -105,19 +112,19 @@ async function buildMusicMenuContent(kv, guildId) {
         `現在のデフォルト音量: **${formatVolumePercent(volume)}**`,
         '',
         '▶️ **再生**',
-        'ニコニコ動画またはYouTubeのURLを入力して、音声を再生またはキューに追加します。',
+        'URLを入力して、Render上のキューへ追加します。',
         '',
         '⏭️ **スキップ**',
-        '現在再生中の曲をスキップします。',
+        '現在曲を終了し、次の曲へ進みます。',
         '',
         '⏹️ **停止**',
-        '再生を停止し、キューを空にしてVCから退出します。',
+        '現在曲を停止し、待機キューも空にします。',
         '',
         '📋 **キュー**',
-        '現在再生中の曲と待機中の曲を表示します。',
+        'Render上の現在曲と待機曲を表示します。',
         '',
         '🔊 **音量設定**',
-        'このサーバーでのMusicデフォルト音量を設定します。',
+        '次回追加する曲のデフォルト音量を設定します。',
     ].join('\n');
 }
 
@@ -129,25 +136,21 @@ function buildMusicMenuComponents() {
                 .setLabel('再生')
                 .setEmoji('▶️')
                 .setStyle(ButtonStyle.Success),
-
             new ButtonBuilder()
                 .setCustomId('music_menu_skip')
                 .setLabel('スキップ')
                 .setEmoji('⏭️')
                 .setStyle(ButtonStyle.Primary),
-
             new ButtonBuilder()
                 .setCustomId('music_menu_stop')
                 .setLabel('停止')
                 .setEmoji('⏹️')
                 .setStyle(ButtonStyle.Danger),
-
             new ButtonBuilder()
                 .setCustomId('music_menu_queue')
                 .setLabel('キュー')
                 .setEmoji('📋')
                 .setStyle(ButtonStyle.Secondary),
-
             new ButtonBuilder()
                 .setCustomId('music_menu_volume')
                 .setLabel('音量設定')
@@ -181,26 +184,35 @@ function buildMusicVolumeModal(currentVolume) {
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('volume_percent')
-                    .setLabel(`音量 5〜200 を入力。現在: ${formatVolumePercent(currentVolume)}`)
-                    .setPlaceholder('例: 45 / 80 / 100 / 150')
+                    .setLabel(
+                        `音量 5〜200 を入力。現在: ${formatVolumePercent(currentVolume)}`,
+                    )
+                    .setPlaceholder('例: 20 / 45 / 80 / 100')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true),
             ),
         );
 }
 
-async function execute(
-    interaction,
-    context,
-) {
-    const { kv } =
-        context;
+function formatTrackLine(track, index = null) {
+    const prefix = index == null
+        ? '・'
+        : `${index}. `;
 
-    const musicAvailable =
-        await canUseMusic(
-            kv,
-            interaction.guildId,
-        );
+    const displayName = track.title || track.url;
+
+    return [
+        `${prefix}${displayName}`,
+        `   リクエスト: <@${track.requestedById}>`,
+    ];
+}
+
+async function execute(interaction, context) {
+    const { kv } = context;
+    const musicAvailable = await canUseMusic(
+        kv,
+        interaction.guildId,
+    );
 
     if (!musicAvailable) {
         await interaction.reply(
@@ -216,297 +228,211 @@ async function execute(
 
     await interaction.reply(
         ephemeralOptions({
-            content:
-                await buildMusicMenuContent(
-                    kv,
-                    interaction.guildId,
-                ),
-
-            components:
-                buildMusicMenuComponents(),
+            content: await buildMusicMenuContent(
+                kv,
+                interaction.guildId,
+            ),
+            components: buildMusicMenuComponents(),
         }),
     );
 }
 
-async function handleComponent(
-    interaction,
-    context,
-) {
-    const customId =
-        interaction.customId || '';
+async function handleSkip(interaction, kv) {
+    const queue = await getGuildMusicQueue(
+        kv,
+        interaction.guildId,
+    );
 
-    if (
-        !customId.startsWith(
-            'music_',
-        )
-    ) {
+    if (!queue.current) {
+        await interaction.reply(
+            ephemeralOptions({
+                content: '現在再生中の曲はありません。',
+            }),
+        );
+
+        return true;
+    }
+
+    await createMusicJob(
+        kv,
+        {
+            workerId: queue.current.workerId,
+            guildId: interaction.guildId,
+            voiceChannelId: queue.current.voiceChannelId,
+            textChannelId: interaction.channelId,
+            requestedById: interaction.user.id,
+            url: null,
+            type: 'skip',
+        },
+    );
+
+    await interaction.reply(
+        ephemeralOptions({
+            content:
+                '⏭️ 現在の曲をスキップします。' +
+                (queue.queued.length > 0
+                    ? ' 次の曲へ進みます。'
+                    : ''),
+        }),
+    );
+
+    return true;
+}
+
+async function handleStop(interaction, kv) {
+    const cleared = await clearGuildMusicQueue(
+        kv,
+        interaction.guildId,
+    );
+
+    if (!cleared.current && cleared.queuedCount === 0) {
+        await interaction.reply(
+            ephemeralOptions({
+                content:
+                    '現在再生中の曲も待機中の曲もありません。',
+            }),
+        );
+
+        return true;
+    }
+
+    if (cleared.current) {
+        await createMusicJob(
+            kv,
+            {
+                workerId: cleared.current.workerId,
+                guildId: interaction.guildId,
+                voiceChannelId:
+                    cleared.current.voiceChannelId,
+                textChannelId: interaction.channelId,
+                requestedById: interaction.user.id,
+                url: null,
+                type: 'stop',
+            },
+        );
+    }
+
+    await interaction.reply(
+        ephemeralOptions({
+            content:
+                `⏹️ 再生を停止し、待機中の曲を ` +
+                `${cleared.queuedCount} 件削除しました。`,
+        }),
+    );
+
+    return true;
+}
+
+async function handleQueue(interaction, kv) {
+    const queue = await getGuildMusicQueue(
+        kv,
+        interaction.guildId,
+    );
+
+    const lines = [
+        '## 📋 Music キュー',
+        '',
+        '### 再生中',
+    ];
+
+    if (queue.current) {
+        lines.push(
+            ...formatTrackLine(queue.current),
+        );
+    } else {
+        lines.push('・なし');
+    }
+
+    lines.push('', '### 待機中');
+
+    if (queue.queued.length === 0) {
+        lines.push('・なし');
+    } else {
+        queue.queued
+            .slice(0, 10)
+            .forEach((track, index) => {
+                lines.push(
+                    ...formatTrackLine(
+                        track,
+                        index + 1,
+                    ),
+                );
+            });
+
+        if (queue.queued.length > 10) {
+            lines.push(
+                '',
+                `ほか ${queue.queued.length - 10} 件`,
+            );
+        }
+    }
+
+    await interaction.reply(
+        ephemeralOptions({
+            content: lines.join('\n'),
+        }),
+    );
+
+    return true;
+}
+
+async function handleComponent(interaction, context) {
+    const customId = interaction.customId || '';
+
+    if (!customId.startsWith('music_')) {
         return false;
     }
 
-    /*
-     * 先にRedis Clientを取得する。
-     */
-    const { kv } =
-        context;
-
-    /*
-     * 従来PC版、
-     * またはDesktop Music Workerの
-     * どちらかが利用可能ならMusicを使える。
-     */
-    const musicAvailable =
-        await canUseMusic(
-            kv,
-            interaction.guildId,
-        );
+    const { kv } = context;
+    const musicAvailable = await canUseMusic(
+        kv,
+        interaction.guildId,
+    );
 
     if (!musicAvailable) {
-        const options =
-            ephemeralOptions({
-                content:
-                    '現在、利用可能なMusic Workerがありません。\n' +
-                    '従来のPC版AutoDetector、または' +
-                    'AutoDetector DesktopのMusic Workerを起動してください。',
-            });
+        const options = ephemeralOptions({
+            content:
+                '現在、利用可能なMusic Workerがありません。\n' +
+                'AutoDetector Desktopで、このサーバーのMusic Workerを起動してください。',
+        });
 
-        if (
-            interaction.deferred ||
-            interaction.replied
-        ) {
-            await interaction.followUp(
-                options,
-            );
+        if (interaction.deferred || interaction.replied) {
+            await interaction.followUp(options);
         } else {
-            await interaction.reply(
-                options,
-            );
+            await interaction.reply(options);
         }
 
         return true;
     }
 
-    /*
-     * ボタン操作
-     */
     if (interaction.isButton()) {
-        if (
-            interaction.customId ===
-            'music_menu_play'
-        ) {
+        if (customId === 'music_menu_play') {
             await interaction.showModal(
                 buildMusicPlayModal(),
             );
-
             return true;
         }
 
-        if (
-            interaction.customId ===
-            'music_menu_skip'
-        ) {
-            const worker =
-                await findBusyMusicWorker(
-                    kv,
-                    interaction.guildId,
-                );
+        if (customId === 'music_menu_skip') {
+            return handleSkip(interaction, kv);
+        }
 
-            if (!worker) {
-                await interaction.reply(
-                    ephemeralOptions({
-                        content:
-                            '現在再生中のMusic Workerがありません。',
-                    }),
-                );
+        if (customId === 'music_menu_stop') {
+            return handleStop(interaction, kv);
+        }
 
-                return true;
-            }
+        if (customId === 'music_menu_queue') {
+            return handleQueue(interaction, kv);
+        }
 
-            await createMusicJob(
+        if (customId === 'music_menu_volume') {
+            const currentVolume = await getDefaultVolume(
                 kv,
-                {
-                    workerId:
-                        worker.workerId,
-                    guildId:
-                        interaction.guildId,
-                    voiceChannelId:
-                        interaction.member?.voice?.channelId ||
-                        null,
-                    textChannelId:
-                        interaction.channelId,
-                    requestedById:
-                        interaction.user.id,
-                    url:
-                        null,
-                    type:
-                        'skip',
-                },
+                interaction.guildId,
             );
-
-            await interaction.reply(
-                ephemeralOptions({
-                    content:
-                        '⏭️ Music Workerへスキップ要求を送信しました。',
-                }),
-            );
-
-            return true;
-        }
-
-        if (
-            interaction.customId ===
-            'music_menu_stop'
-        ) {
-            const worker =
-                await findBusyMusicWorker(
-                    kv,
-                    interaction.guildId,
-                );
-
-            if (!worker) {
-                await interaction.reply(
-                    ephemeralOptions({
-                        content:
-                            '現在再生中のMusic Workerがありません。',
-                    }),
-                );
-
-                return true;
-            }
-
-            await createMusicJob(
-                kv,
-                {
-                    workerId:
-                        worker.workerId,
-                    guildId:
-                        interaction.guildId,
-                    voiceChannelId:
-                        interaction.member?.voice?.channelId ||
-                        null,
-                    textChannelId:
-                        interaction.channelId,
-                    requestedById:
-                        interaction.user.id,
-                    url:
-                        null,
-                    type:
-                        'stop',
-                },
-            );
-
-            await interaction.reply(
-                ephemeralOptions({
-                    content:
-                        '⏹️ Music Workerへ停止要求を送信しました。',
-                }),
-            );
-
-            return true;
-        }
-
-        if (
-            interaction.customId ===
-            'music_menu_queue'
-        ) {
-            const jobs =
-                await getGuildMusicJobs(
-                    kv,
-                    interaction.guildId,
-                );
-
-            const currentJob =
-                jobs.find(
-                    (job) =>
-                        job.status === 'assigned',
-                );
-
-            const pendingJobs =
-                jobs.filter(
-                    (job) =>
-                        job.status === 'pending',
-                );
-
-            const lines = [
-                '## 📋 Music キュー',
-                '',
-                '### 再生中',
-            ];
-
-            if (currentJob) {
-                lines.push(
-                    `・${currentJob.url}`,
-                );
-
-                lines.push(
-                    `  リクエスト: <@${currentJob.requestedById}>`,
-                );
-            } else {
-                lines.push(
-                    '・なし',
-                );
-            }
-
-            lines.push(
-                '',
-                '### 待機中',
-            );
-
-            if (
-                pendingJobs.length === 0
-            ) {
-                lines.push(
-                    '・なし',
-                );
-            } else {
-                pendingJobs
-                    .slice(0, 10)
-                    .forEach(
-                        (job, index) => {
-                            lines.push(
-                                `${index + 1}. ${job.url}`,
-                            );
-
-                            lines.push(
-                                `   リクエスト: <@${job.requestedById}>`,
-                            );
-                        },
-                    );
-
-                if (
-                    pendingJobs.length >
-                    10
-                ) {
-                    lines.push(
-                        '',
-                        `ほか ${pendingJobs.length - 10} 件`,
-                    );
-                }
-            }
-
-            await interaction.reply(
-                ephemeralOptions({
-                    content:
-                        lines.join('\n'),
-                }),
-            );
-
-            return true;
-        }
-
-        if (
-            interaction.customId ===
-            'music_menu_volume'
-        ) {
-            const currentVolume =
-                await getDefaultVolume(
-                    kv,
-                    interaction.guildId,
-                );
 
             await interaction.showModal(
-                buildMusicVolumeModal(
-                    currentVolume,
-                ),
+                buildMusicVolumeModal(currentVolume),
             );
 
             return true;
@@ -515,203 +441,138 @@ async function handleComponent(
         return false;
     }
 
-    /*
-     * Modal処理
-     */
     if (interaction.isModalSubmit()) {
-        /*
-         * 再生URL
-         */
-        if (
-            interaction.customId ===
-            'music_play_modal'
-        ) {
-            const url =
-                interaction.fields
-                    .getTextInputValue(
-                        'url',
-                    )
-                    .trim();
+        if (customId === 'music_play_modal') {
+            const url = interaction.fields
+                .getTextInputValue('url')
+                .trim();
 
             await interaction.deferReply(
                 ephemeralOptions(),
             );
 
-            /*
-             * コマンド実行者が現在いるVC。
-             */
-            const member =
-                await interaction.guild.members
-                    .fetch(
-                        interaction.user.id,
-                    )
-                    .catch(
-                        () =>
-                            interaction.member ??
-                            null,
-                    );
+            if (!isAllowedMusicUrl(url)) {
+                await interaction.editReply({
+                    content:
+                        '対応しているURLではありません。\n' +
+                        'ニコニコ動画、YouTube、YouTube MusicのURLを入力してください。',
+                });
+                return true;
+            }
 
-            const voiceChannel =
-                member?.voice?.channel;
+            const member = await interaction.guild.members
+                .fetch(interaction.user.id)
+                .catch(
+                    () => interaction.member ?? null,
+                );
+
+            const voiceChannel = member?.voice?.channel;
 
             if (!voiceChannel) {
                 await interaction.editReply({
                     content:
                         '先にボイスチャンネルに参加してください。',
                 });
-
                 return true;
             }
 
-            /*
-             * このGuildで利用できる
-             * idle Music Workerを取得。
-             */
-            const worker =
-                await findAvailableMusicWorker(
-                    kv,
-                    interaction.guildId,
-                );
+            const volume = await getDefaultVolume(
+                kv,
+                interaction.guildId,
+            );
 
-            if (!worker) {
-                await interaction.editReply({
-                    content:
-                        '現在、このサーバーで利用可能なMusic Workerがありません。\n' +
-                        'AutoDetector Desktopを起動して、' +
-                        'このサーバーのMusic Workerを開始してください。',
-                });
+            let result;
 
-                return true;
-            }
-
-            const volume =
-                await getDefaultVolume(
-                    kv,
-                    interaction.guildId,
-                );
-
-            /*
-             * Renderでは音源取得しない。
-             *
-             * Desktop Workerへ渡すJobだけ作成。
-             */
-            const job =
-                await createMusicJob(
+            try {
+                result = await enqueueMusicTrack(
                     kv,
                     {
-                        workerId:
-                            worker.workerId,
-
-                        guildId:
-                            interaction.guildId,
-
-                        voiceChannelId:
-                            voiceChannel.id,
-
-                        textChannelId:
-                            interaction.channelId,
-
-                        requestedById:
-                            interaction.user.id,
-
+                        guildId: interaction.guildId,
+                        voiceChannelId: voiceChannel.id,
+                        textChannelId: interaction.channelId,
+                        requestedById: interaction.user.id,
                         url,
-
                         volume,
-
-                        type:
-                            'play',
                     },
                 );
+            } catch (error) {
+                if (error.message === 'music_queue_busy') {
+                    await interaction.editReply({
+                        content:
+                            'キューを更新中です。数秒後にもう一度お試しください。',
+                    });
+                    return true;
+                }
+                throw error;
+            }
 
-            /*
-             * 同じWorkerを別の再生へ
-             * 同時割当しないためbusyにする。
-             */
-            await setMusicWorkerStatus(
-                kv,
-                worker.workerId,
-                'busy',
-            );
+            if (!result.ok) {
+                const message =
+                    result.reason === 'queue_full'
+                        ? 'キューが100曲に達しています。'
+                        : 'このサーバーで利用可能なMusic Workerがありません。';
+
+                await interaction.editReply({
+                    content: message,
+                });
+                return true;
+            }
 
             await addAuditLog(
                 interaction,
                 kv,
-                'Music Worker再生要求',
+                result.started
+                    ? 'Music再生開始'
+                    : 'Musicキュー追加',
                 `URL: ${url} / ` +
-                `Worker: ${worker.name} / ` +
+                `Worker: ${result.worker.name} / ` +
                 `VC: ${voiceChannel.id} / ` +
-                `音量: ${formatVolumePercent(volume)} / ` +
-                `Job: ${job.jobId}`,
-            ).catch(
-                () => null,
-            );
+                `音量: ${formatVolumePercent(volume)}`,
+            ).catch(() => null);
 
             await interaction.editReply({
-                content:
-                    '🎵 Music Workerへ再生要求を送信しました。\n' +
-                    `VC: <#${voiceChannel.id}>\n` +
-                    `Worker: ${worker.name}\n` +
-                    `URL: ${url}`,
+                content: result.started
+                    ? [
+                        '🎵 再生要求を送信しました。',
+                        `VC: <#${voiceChannel.id}>`,
+                        `Worker: ${result.worker.name}`,
+                        `URL: ${url}`,
+                    ].join('\n')
+                    : [
+                        '📥 キューに追加しました。',
+                        `待機位置: ${result.position}`,
+                        `URL: ${url}`,
+                    ].join('\n'),
             });
 
             return true;
         }
 
-        /*
-         * 音量設定
-         */
-        if (
-            interaction.customId ===
-            'music_volume_modal'
-        ) {
-            const raw =
-                interaction.fields
-                    .getTextInputValue(
-                        'volume_percent',
-                    )
-                    .trim();
+        if (customId === 'music_volume_modal') {
+            const raw = interaction.fields
+                .getTextInputValue('volume_percent')
+                .trim();
 
-            const percent =
-                Number(raw);
+            const percent = Number(raw);
 
             if (
-                !Number.isFinite(
-                    percent,
-                ) ||
+                !Number.isFinite(percent) ||
                 percent < 5 ||
                 percent > 200
             ) {
                 await interaction.reply(
                     ephemeralOptions({
                         content:
-                            '音量は 5〜200 の数字で入力してください。' +
-                            '例: 20 / 45 / 80 / 100',
+                            '音量は 5〜200 の数字で入力してください。',
                     }),
                 );
-
                 return true;
             }
-
-            const volume =
-                percent / 100;
 
             await setDefaultVolume(
                 kv,
                 interaction.guildId,
-                volume,
-            );
-
-            /*
-             * 従来PC版Music Playerが動いている場合にも
-             * これまでどおり反映。
-             */
-            const player =
-                getMusicPlayer(
-                    interaction.guildId,
-                );
-
-            player.setVolume(
-                volume,
+                percent / 100,
             );
 
             await addAuditLog(
@@ -719,22 +580,17 @@ async function handleComponent(
                 kv,
                 'Music 音量設定',
                 `Music のデフォルト音量を ${percent}% に設定しました。`,
-            ).catch(
-                () => null,
-            );
+            ).catch(() => null);
 
             await interaction.reply(
                 ephemeralOptions({
                     content:
-                        `Music のデフォルト音量を **${percent}%** に設定しました。\n` +
-                        '次回のDesktop Worker再生にも反映されます。',
+                        `Music のデフォルト音量を **${percent}%** に設定しました。`,
                 }),
             );
 
             return true;
         }
-
-        return false;
     }
 
     return false;

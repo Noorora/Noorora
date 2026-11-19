@@ -24,13 +24,16 @@ const {
     unregisterMusicWorker,
 } = require('../services/musicWorkerService');
 
-
 const {
     createMusicJob,
     takeNextMusicJob,
     updateMusicJobStatus,
     getMusicJob,
 } = require('../services/musicJobService');
+
+const {
+    finishCurrentMusicTrack,
+} = require('../services/musicQueueService');
 
 const {
     getRemoteVoiceSession,
@@ -1482,10 +1485,34 @@ if (
             }
 
             /*
-             * ジョブを担当するWorkerの
-             * 所有者だけが状態を変更できる。
+             * Renderがキューの唯一の管理者。
+             * playジョブが終端状態になったら現在曲を外し、
+             * 待機曲があれば同じWorkerへ次のplayジョブを配送する。
              */
-            
+            const terminalStatuses =
+                new Set([
+                    'completed',
+                    'failed',
+                    'cancelled',
+                ]);
+
+            if (
+                updatedJob.type === 'play' &&
+                terminalStatuses.has(status)
+            ) {
+                await finishCurrentMusicTrack(
+                    kv,
+                    {
+                        guildId:
+                            updatedJob.guildId,
+                        jobId:
+                            updatedJob.jobId,
+                        workerId:
+                            updatedJob.workerId,
+                    },
+                );
+            }
+
             res.status(200).json({
                 ok: true,
 
