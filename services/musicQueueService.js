@@ -312,6 +312,23 @@ async function dispatchNextMusicTrackUnlocked(
     };
 }
 
+async function resumeGuildMusicQueue(
+    kv,
+    guildId,
+    workerId,
+) {
+    return withGuildQueueLock(
+        kv,
+        guildId,
+        async () =>
+            dispatchNextMusicTrackUnlocked(
+                kv,
+                guildId,
+                workerId,
+            ),
+    );
+}
+
 async function enqueueMusicTrack(
     kv,
     {
@@ -446,11 +463,90 @@ async function finishCurrentMusicTrack(
                 );
             }
 
-            return dispatchNextMusicTrackUnlocked(
+            const nextResult =
+                await dispatchNextMusicTrackUnlocked(
+                    kv,
+                    guildId,
+                    current?.workerId || workerId,
+                );
+
+            /*
+             * 次曲が無い場合だけ常駐Voice Workerへdisconnectを送る。
+             * 次曲がある場合は同じVoice接続を維持したままplayを送る。
+             */
+            if (!nextResult.started) {
+                const disconnectWorkerId =
+                    current?.workerId || workerId;
+
+                if (disconnectWorkerId) {
+                    await createMusicJob(
+                        kv,
+                        {
+                            workerId:
+                                disconnectWorkerId,
+                            guildId,
+                            voiceChannelId:
+                                current?.voiceChannelId || null,
+                            textChannelId:
+                                current?.textChannelId || null,
+                            requestedById:
+                                current?.requestedById || null,
+                            url:
+                                null,
+                            type:
+                                'disconnect',
+                        },
+                    );
+                }
+            }
+
+            return nextResult;
+        },
+    );
+}
+
+async function releaseCurrentMusicTrack(
+    kv,
+    {
+        guildId,
+        jobId,
+        workerId,
+    },
+) {
+    return withGuildQueueLock(
+        kv,
+        guildId,
+        async () => {
+            const current = await getCurrentMusicTrack(
                 kv,
                 guildId,
-                current?.workerId || workerId,
             );
+
+            if (
+                current &&
+                (!jobId || current.jobId === jobId)
+            ) {
+                await kv.del(
+                    musicCurrentKey(guildId),
+                );
+            }
+
+            if (workerId) {
+                await setMusicWorkerStatus(
+                    kv,
+                    workerId,
+                    'idle',
+                );
+            }
+
+            return {
+                current,
+                queued:
+                    await getQueuedMusicTracks(
+                        kv,
+                        guildId,
+                    ),
+            };
         },
     );
 }
@@ -486,9 +582,11 @@ module.exports = {
     MUSIC_QUEUE_TTL_SECONDS,
     MAX_QUEUE_LENGTH,
     enqueueMusicTrack,
+    resumeGuildMusicQueue,
     getCurrentMusicTrack,
     getQueuedMusicTracks,
     getGuildMusicQueue,
     finishCurrentMusicTrack,
+    releaseCurrentMusicTrack,
     clearGuildMusicQueue,
 };

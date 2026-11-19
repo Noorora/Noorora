@@ -33,6 +33,8 @@ const {
 
 const {
     finishCurrentMusicTrack,
+    releaseCurrentMusicTrack,
+    resumeGuildMusicQueue,
 } = require('../services/musicQueueService');
 
 const {
@@ -984,6 +986,19 @@ router.post(
                     },
                 );
 
+            /* Desktop復帰時は、保持中の待機キューを先頭から再開する。 */
+            try {
+                await resumeGuildMusicQueue(
+                    kv,
+                    guildId,
+                    worker.workerId,
+                );
+            } catch (error) {
+                if (error.message !== 'music_queue_busy') {
+                    throw error;
+                }
+            }
+
             await refreshManagementSession(
                 kv,
                 loginId,
@@ -1500,17 +1515,42 @@ if (
                 updatedJob.type === 'play' &&
                 terminalStatuses.has(status)
             ) {
-                await finishCurrentMusicTrack(
-                    kv,
-                    {
-                        guildId:
-                            updatedJob.guildId,
-                        jobId:
-                            updatedJob.jobId,
-                        workerId:
-                            updatedJob.workerId,
-                    },
-                );
+                const desktopIsClosing =
+                    status === 'cancelled' &&
+                    typeof detail === 'string' &&
+                    detail.startsWith(
+                        'Desktopアプリ終了:',
+                    );
+
+                if (desktopIsClosing) {
+                    /*
+                     * Desktop自体が終了する場合は待機キューを残す。
+                     * 次のplay Jobは、Worker復帰後の再開時に配送する。
+                     */
+                    await releaseCurrentMusicTrack(
+                        kv,
+                        {
+                            guildId:
+                                updatedJob.guildId,
+                            jobId:
+                                updatedJob.jobId,
+                            workerId:
+                                updatedJob.workerId,
+                        },
+                    );
+                } else {
+                    await finishCurrentMusicTrack(
+                        kv,
+                        {
+                            guildId:
+                                updatedJob.guildId,
+                            jobId:
+                                updatedJob.jobId,
+                            workerId:
+                                updatedJob.workerId,
+                        },
+                    );
+                }
             }
 
             res.status(200).json({
